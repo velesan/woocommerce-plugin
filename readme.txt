@@ -2,9 +2,9 @@
 Contributors: WpOpieka
 Donate link: https://wp-opieka.pl/
 Requires at least: 6.0
-Tested up to: 6.9.1
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.4.1
+Stable tag: 2.7.1
 License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -74,6 +74,47 @@ Zakładka WooCommerce → Ustawienia → Wysyłka
 3. Nadanie przesyłki poprzez wtyczkę GlobKurier
 
 == Changelog ==
+
+2.7.1 - 28.10.2026
+	Fix: shipment with dangerous goods declared is blocked in the form with a clear message (GlobKurier does not accept dangerous goods) instead of an API error
+	Performance: Protocols page loads shipments page by page (AJAX) instead of the whole history at once
+	Performance: shipment history and protocols use an indexed table (filled once in the background, verified before use)
+	Performance: admin pages reuse the saved API token instead of logging in to the API on every view; token cleared when login or password changes
+	Performance: payment methods and carriers with pickup points cached in settings (12 h, refreshed on save); last known values used when the API is unavailable
+	Performance: shorter API timeout for reads (60 s), 300 s kept for shipping and PDF; login retried only on connection or server errors
+	Fix: PDF labels and protocols downloaded with the API timeout instead of the WordPress default 5 s
+	Fix: shipment history shows the WooCommerce order number instead of the order ID
+	Fix: shipment dates and times shown in the store timezone instead of UTC
+	Changed: order screen shows shipments right away and loads their status automatically (cached 15 min, "Aktualizuj" refreshes)
+	Added: setting to disable the "Wysyłka" column on the order list; the column does no work when hidden in Screen Options
+	Changed: unused empty helper posts (globkurier_ghost) created by older versions are removed once in the background; posts holding shipments are kept
+
+2.7 - 27.10.2026
+	Added: dangerous goods declaration (containsDangerousGoods) in the shipment form and bulk send
+	Security: pickup point search no longer overwrites the shared ORLEN points list
+	Security: data from the API and order addresses escaped in the admin panel, maps and shipment history
+	Security: nonces and capability checks for crossborder terminals, extra carrier point session and data removal
+	Security: public point search limited (known countries only, shorter API timeout, no login retries)
+	Security: nonces for PDF label and protocol links
+	Security: per-order capability check when shipping, in bulk send and customs import
+	Security: addon and required carrier fields escaped in the order panel and bulk send
+	Fix: ORLEN Paczka recognised in the order panel (pickup point field, products list)
+	Fix: address book - adding a contact no longer reports an error (API 204)
+	Fix: extra pickup point carriers - selected point restored after page reload
+	Fix: InPost points download (duplicated first page, partial lists), ORLEN points cache expiry
+	Fix: checkout validation uses the selected shipping method
+	Fix: FedEx pickup points search (fallback to product ID in Poland)
+	Fix: ORLEN Paczka - receiver pickup point sent also when the parcel is collected by courier
+	Change: API requests via the WordPress HTTP API (sites blocking external requests must allow api.globkurier.pl)
+	Change: points cache stored in uploads/globkurier
+	Change: checkout block apiVersion 3 (editor in iframe, WordPress 7.0+)
+	Change: pickup points list refreshed in the background (WP-Cron) instead of during checkout search
+	Deprecated: GlobKurierInpost::getAllPointsGK() - use getAllPointsFromInpost()
+
+2.6 - 06.10.2026
+	Fix: fix HPOS mode issues
+	Fix: order list issues
+	Fix: minor issues
 
 2.5.4.1 - 10.06.2026
 	Added: Inpost door to door pickup point support

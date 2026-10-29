@@ -94,16 +94,24 @@ class UDIGroup_Loader{
 	
 	public function register_menu(){
 		foreach( $this->menuPages as $page ){
-			add_menu_page( __( $page[ 'page_title' ], 'globkurier' ), __( $page[ 'menu_title' ], 'globkurier' ), $page[ 'capability' ], $page[ 'menu_slug' ],
+			add_menu_page( self::title( $page[ 'page_title' ] ), self::title( $page[ 'menu_title' ] ), $page[ 'capability' ], $page[ 'menu_slug' ],
 				[ $page[ 'component' ], 'load_admin_menu' ],
 				$page[ 'icon_url' ],
 				$page[ 'position' ] );
 		}
 
 		foreach( $this->menuSubPages as $subpage ){
-			add_submenu_page( $subpage[ 'parent_slug' ], __( $subpage[ 'page_title' ], 'globkurier' ), __( $subpage[ 'menu_title' ], 'globkurier' ), $subpage[ 'capability' ], $subpage[ 'menu_slug' ],
+			add_submenu_page( $subpage[ 'parent_slug' ], self::title( $subpage[ 'page_title' ] ), self::title( $subpage[ 'menu_title' ] ), $subpage[ 'capability' ], $subpage[ 'menu_slug' ],
 				[ $subpage[ 'component' ], 'load_admin_menu' ], $subpage[ 'position' ] );
 		}
+	}
+
+	/**
+	 * Tytuly menu przychodza jako domkniecia z __() i literalem - tlumaczenie dopiero na admin_menu,
+	 * gdy domena jest juz wczytana (wczesniejsze __() to notice "called too early" od WP 6.7).
+	 */
+	private static function title( $title ): string{
+		return $title instanceof \Closure ? (string) $title() : (string) $title;
 	}
 	
 }

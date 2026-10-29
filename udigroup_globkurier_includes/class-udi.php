@@ -34,12 +34,32 @@ class UDIGroup_plugin
 		$this->set_locale();
 		$this->define_admin_hooks();
 		$this->define_public_hooks();
+		$this->define_cron_hooks();
+	}
+
+	/** Odswiezanie list punktow w tle (WP-Cron) - planowane przy wygaslym cache, zob. getAllPointsFromInpost(). */
+	private function define_cron_hooks()
+	{
+		add_action(GlobKurierInpost::REFRESH_HOOK, static function (){
+			global $globKurier;
+			UDIGroup_Helper::extendTimeLimit();
+			$globKurier->inpost()->getAllPointsFromInpost(true);
+		});
+
+		add_action(GlobKurierRuch::REFRESH_HOOK, static function (){
+			global $globKurier;
+			UDIGroup_Helper::extendTimeLimit();
+			$globKurier->ruch()->getAllPoints(true);
+		});
 	}
 	
 	private function load_dependencies()
 	{
 		require_once UDIGroup_GLOBKURIER_INIT::getHelperDir();
-		
+
+		require_once UDIGroup_Helper::getInlcudesPath('class-udi-shipment-history.php');
+		require_once UDIGroup_Helper::getInlcudesPath('class-udi-ghost-cleanup.php');
+
 		require_once UDIGroup_Helper::getInlcudesPath('class-udi-blocks.php');
 		require_once UDIGroup_Helper::getInlcudesPath('class-udi-loader.php');
 		
@@ -79,22 +99,23 @@ class UDIGroup_plugin
 		$this->loader->add_action('admin_enqueue_scripts', $plugin_admin, 'enqueue_styles');
 		$this->loader->add_action('admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts');
 		
-		$this->loader->add_menu_page($component = $plugin_admin, $pageTitle = 'GlobKurier', $menuTitle = 'GlobKurier', $menuSlug = 'globkurier',
+		$this->loader->add_menu_page($component = $plugin_admin, $pageTitle = fn() => __('GlobKurier', 'globkurier'), $menuTitle = fn() => __('GlobKurier', 'globkurier'), $menuSlug = 'globkurier',
 			$iconUrl = UDIGroup_Helper::getAdminUrl('img/icon-new.png'), $position = 5, $capability = 'manage_options_ghost');
 
-		$this->loader->add_submenu_page($component = $plugin_admin, $parentSlug = 'globkurier', $pageTitle = 'GlobKurier - Historia przesyłek', $menuTitle = 'Historia przesyłek',
+		$this->loader->add_submenu_page($component = $plugin_admin, $parentSlug = 'globkurier', $pageTitle = fn() => __('GlobKurier - Historia przesyłek', 'globkurier'), $menuTitle = fn() => __('Historia przesyłek', 'globkurier'),
 			$capability = 'manage_options', $menuSlug = 'globkurier_all_orders', $position = 0);
-		$this->loader->add_submenu_page($component = $plugin_admin, $parentSlug = 'globkurier', $pageTitle = 'GlobKurier - Protokoły', $menuTitle = 'Protokoły',
+		$this->loader->add_submenu_page($component = $plugin_admin, $parentSlug = 'globkurier', $pageTitle = fn() => __('GlobKurier - Protokoły', 'globkurier'), $menuTitle = fn() => __('Protokoły', 'globkurier'),
 			$capability = 'manage_options', $menuSlug = 'globkurier_protocols', $position = 1);
-		$this->loader->add_submenu_page($component = $plugin_admin, $parentSlug = 'globkurier', $pageTitle = 'GlobKurier - Nadaj przez GlobKuriera',
-			$menuTitle = 'Nadaj przez GlobKuriera', $capability = 'manage_options', $menuSlug = 'globkurier_ship_order', $position = 2);
-		$this->loader->add_submenu_page($component = $plugin_admin, $parentSlug = 'globkurier', $pageTitle = 'GlobKurier - Konfiguracja', $menuTitle = 'Konfiguracja',
+		$this->loader->add_submenu_page($component = $plugin_admin, $parentSlug = 'globkurier', $pageTitle = fn() => __('GlobKurier - Nadaj przez GlobKuriera', 'globkurier'),
+			$menuTitle = fn() => __('Nadaj przez GlobKuriera', 'globkurier'), $capability = 'manage_options', $menuSlug = 'globkurier_ship_order', $position = 2);
+		$this->loader->add_submenu_page($component = $plugin_admin, $parentSlug = 'globkurier', $pageTitle = fn() => __('GlobKurier - Konfiguracja', 'globkurier'), $menuTitle = fn() => __('Konfiguracja', 'globkurier'),
 			$capability = 'manage_options', $menuSlug = 'globkurier_settings', $position = 3);
 		
 		$wc_addons = new WoocommerceAddons();
 		$this->loader->add_action('init', $wc_addons, 'init');
 		
 		$this->loader->add_action('init', $ajax_admin, 'init');
+		add_action('admin_notices', [GlobKurierApi::class, 'connectionNotice']);
 		$this->loader->add_action('init', $ajax_public, 'init');
 	}
 	

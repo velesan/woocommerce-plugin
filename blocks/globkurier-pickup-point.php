@@ -1,5 +1,7 @@
 <?php
 
+if (!defined('ABSPATH')) exit; // Exit if accessed directly
+
 add_action('woocommerce_blocks_loaded', function (){
 	require_once __DIR__.'/globkurier-pickup-point-blocks-integration.php';
 
@@ -18,7 +20,7 @@ function register_GlobkurierPickupPoint_block_category($categories)
 		[
 			[
 				'slug'  => 'globkurier-pickup-point',
-				'title' => __('GlobkurierPickupPoint Blocks', 'globkurier-pickup-point'),
+				'title' => __('GlobkurierPickupPoint Blocks', 'globkurier'),
 			],
 		]
 	);
@@ -144,38 +146,38 @@ function globkurier_cb_schema_callback()
 			
 			$return = array_merge($return, [
 				'globkurier_'.$key.'_input'              => [
-					'description' => __('globkurier_'.$key.'_input', 'globkurier'),
+					'description' => 'globkurier_'.$key.'_input',
 					'type'        => ['string', 'null'],
 					'readonly'    => true,
 				],
 				'globkurier_'.$key.'_input_hidden_value' => [
-					'description' => __('globkurier_'.$key.'_input_hidden_value', 'globkurier'),
+					'description' => 'globkurier_'.$key.'_input_hidden_value',
 					'type'        => ['string', 'null'],
 					'readonly'    => true,
 				],
 				
 				'globkurier_'.$key.'_input_point_lat'          => [
-					'description' => __('globkurier_'.$key.'_input_point_lat', 'globkurier'),
+					'description' => 'globkurier_'.$key.'_input_point_lat',
 					'type'        => ['float', 'integer', 'string', 'null'],
 					'readonly'    => true,
 				],
 				'globkurier_'.$key.'_input_point_long'         => [
-					'description' => __('globkurier_'.$key.'_input_point_long', 'globkurier'),
+					'description' => 'globkurier_'.$key.'_input_point_long',
 					'type'        => ['float', 'integer', 'string', 'null'],
 					'readonly'    => true,
 				],
 				'globkurier_'.$key.'_input_point_city'         => [
-					'description' => __('globkurier_'.$key.'_input_point_city', 'globkurier'),
+					'description' => 'globkurier_'.$key.'_input_point_city',
 					'type'        => ['string', 'null'],
 					'readonly'    => true,
 				],
 				'globkurier_'.$key.'_input_point_address'      => [
-					'description' => __('globkurier_'.$key.'_input_point_address', 'globkurier'),
+					'description' => 'globkurier_'.$key.'_input_point_address',
 					'type'        => ['string', 'null'],
 					'readonly'    => true,
 				],
 				'globkurier_'.$key.'_input_point_openingHours' => [
-					'description' => __('globkurier_'.$key.'_input_point_openingHours', 'globkurier'),
+					'description' => 'globkurier_'.$key.'_input_point_openingHours',
 					'type'        => ['string', 'null'],
 					'readonly'    => true,
 				],
@@ -198,7 +200,19 @@ add_action('woocommerce_store_api_checkout_update_order_from_request', function 
 		return;
 	}
 
-	(new WoocommerceAddons())->setOrderMeta($order->get_id(), $data[ 'globkurier_method_id' ], $data);
+	// Metoda dostawy faktycznie wybrana w zamowieniu (linie wysylki sa juz utworzone z koszyka), a nie podana
+	// przez klienta w danych rozszerzenia - inaczej dalo sie dopisac meta punktu do zamowienia z inna metoda.
+	// Wartosc od klienta przyjmujemy tylko, gdy odpowiada linii wysylki zamowienia - takze dla stawek z dodatkowym
+	// sufiksem w ID (np. table_rate:3:1), ktore moga byc zapisane w ustawieniach wtyczki.
+	$shippingItems = $order->get_shipping_methods();
+	$shippingItem  = reset($shippingItems);
+	$orderMethodId = $shippingItem ? $shippingItem->get_method_id().':'.$shippingItem->get_instance_id() : '';
+	$clientMethod  = sanitize_text_field((string) $data[ 'globkurier_method_id' ]);
+	$methodId      = ($orderMethodId !== '' && ($clientMethod === $orderMethodId || strpos($clientMethod, $orderMethodId.':') === 0))
+		? $clientMethod
+		: $orderMethodId;
+
+	(new WoocommerceAddons())->setOrderMeta($order->get_id(), $methodId, $data);
 }, 10, 2);
 
 function globkurier_enqueue_select2_jquery()

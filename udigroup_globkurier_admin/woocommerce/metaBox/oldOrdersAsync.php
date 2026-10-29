@@ -10,7 +10,7 @@ if (! defined('ABSPATH')) {
 
 ?>
 
-<button type="button" class="button globkurier_get_old_orders"><?= __('Pobierz listę nadanych paczek', 'globkurier') ?></button>
+<button type="button" class="button globkurier_get_old_orders"><?php echo esc_html__('Pobierz listę nadanych paczek', 'globkurier') ?></button>
 
 <input type="hidden" id="globkurier_old_orders_order_id" value="<?php
 echo esc_attr($orderId); ?> ">

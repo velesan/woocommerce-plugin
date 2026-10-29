@@ -99,6 +99,9 @@ class WoocommerceAddons
 
 		add_filter('pre_update_option_globkurier', [$this, 'cleanupRemovedCarriers'], 5, 2);
 
+		add_action('update_option_globkurier', [$this, 'forgetApiSessionOnCredentialsChange'], 10, 2);
+		add_action('add_option_globkurier', [$this, 'forgetApiSessionOnCredentialsChange'], 10, 2);
+
 		add_action('admin_footer', [$this, 'renderReturnsBanner']);
 
         add_action('add_meta_boxes', [$this, 'globkurier_wc_order_meta_box']);
@@ -185,59 +188,77 @@ class WoocommerceAddons
     }
     public function globkurier_meta_box_content_async()
     {
-        $orderId = get_the_ID() ?: (isset($_GET['id']) ? absint($_GET['id']) : null);
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- ID zamowienia z adresu ekranu edycji (HPOS), tylko odczyt do metaboxa.
+        $orderId = get_the_ID() ?: (isset($_GET['id']) ? absint($_GET['id'] ?? '') : null);
 
         require_once __DIR__.'/metaBox/orderAsync.php';
     }
     public function globkurier_wc_old_orders_meta_box()
     {
-        $mataName = apply_filters('globkurier_wc_order_meta_name', 'globkurier_orders');
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- ID zamowienia z adresu ekranu edycji (HPOS), tylko odczyt do metaboxa.
+        $orderId = get_the_ID() ?: (isset($_GET['id']) ? absint($_GET['id'] ?? '') : null);
 
-        $orderId = get_the_ID() ?: (isset($_GET['id']) ? absint($_GET['id']) : null);
-
-        $order = wc_get_order($orderId);
-
-        $oldOrders = $order
-            ? $order->get_meta( $mataName, false )
-            : get_post_meta( $orderId,  $mataName, false );
-
-        if (!is_array($oldOrders) && !$oldOrders instanceof Countable) {
-            return;
-        }
+        $oldOrders = UDIGroup_ShipmentHistory::forOrder($orderId);
 
         if (count($oldOrders) == 0) {
             return;
         }
 
+        // Lista od razu, bez przycisku "Pobierz liste" - dane sa lokalne (historia w bazie), bez zapytan do API.
         add_meta_box('globkurier_old_orders', __('PACZKI NADANE PRZEZ GLOBKURIER', 'globkurier').' ('.count($oldOrders).')', [
             $this,
-            'globkurier_meta_old_orders_box_content_async',
+            'globkurier_meta_old_orders_box_content',
         ], ['shop_order', 'woocommerce_page_wc-orders'], 'advanced', 'core');
     }
 
     public function globkurier_meta_old_orders_box_content()
     {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- ID zamowienia z adresu ekranu edycji (HPOS), tylko odczyt do metaboxa.
+        $orderId = get_the_ID() ?: absint($_GET[ 'id' ] ?? '');
+
         require_once 'metaBox/oldOrders.php';
     }
 
     public function globkurier_meta_old_orders_box_content_async()
     {
-        $orderId = get_the_ID() ?: absint($_GET[ 'id' ]);
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- ID zamowienia z adresu ekranu edycji (HPOS), tylko odczyt do metaboxa.
+        $orderId = get_the_ID() ?: absint($_GET[ 'id' ] ?? '');
 
         require_once 'metaBox/oldOrdersAsync.php';
     }
 
+    /**
+     * Zapis formularza ustawien GlobKurier (a nie update_option('globkurier') z WP-CLI, importu czy innej wtyczki).
+     */
+    private function isSettingsFormSubmit(): bool
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- tylko sprawdzenie, czy to wyslanie formularza; nonce weryfikuja wywolujacy.
+        return isset($_POST[ 'globkurier' ]);
+    }
+
+    private function settingsNonceValid(): bool
+    {
+        return (bool) wp_verify_nonce(sanitize_text_field(wp_unslash($_POST[ 'nonce' ] ?? '')), 'globkurier_hash_password_nonce');
+    }
+
     public function hashPasswordValue($options)
     {
-        $nonce = sanitize_text_field($_POST[ 'nonce' ]);
-        if (! wp_verify_nonce($nonce, 'globkurier_hash_password_nonce')) {
+        // Zapis spoza formularza ustawien przechodzi bez zmian (wczesniej konczyl kazde zadanie bledem "Invalid nonce").
+        if (! $this->isSettingsFormSubmit()) {
+            return $options;
+        }
+
+        if (! $this->settingsNonceValid()) {
             wp_send_json_error('Invalid nonce');
         }
 
         global $globKurier;
 
         $oldPassword = $globKurier->settings('password');
-        $newPassword = sanitize_text_field($_POST[ 'globkurier' ][ 'password' ]);
+        // Haslo bez sanitize_text_field (zmienial hasla z "<", sekwencjami %XX i wielokrotnymi spacjami) - nigdzie nie jest
+        // wypisywane, trafia tylko do encrypt().
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.NonceVerification.Missing -- haslo do szyfrowania (patrz wyzej); nonce sprawdza settingsNonceValid() powyzej.
+        $newPassword = (string) wp_unslash($_POST[ 'globkurier' ][ 'password' ] ?? '');
 
         if ($newPassword !== $oldPassword) {
             $options[ 'password' ] = $globKurier->encrypter()->encrypt($newPassword);
@@ -248,10 +269,12 @@ class WoocommerceAddons
 
     public function globkurier_settings($settings, $current_section)
     {
-		if (isset($_GET[ 'delete_globkurier_data' ]) && wp_verify_nonce($_GET[ '_wpnonce' ], 'delete_globkurier_data_nonce')) {
+		if (isset($_GET[ 'delete_globkurier_data' ])
+			&& wp_verify_nonce(sanitize_text_field(wp_unslash($_GET[ '_wpnonce' ] ?? '')), 'delete_globkurier_data_nonce')
+			&& current_user_can('manage_woocommerce')) {
 			delete_option('globkurier');
 			
-			wp_redirect(admin_url('admin.php?page=wc-settings&tab=shipping&section=globkurier&deleted=1'));
+			wp_safe_redirect(admin_url('admin.php?page=wc-settings&tab=shipping&section=globkurier&deleted=1'));
 			exit;
 		}
 		
@@ -270,14 +293,14 @@ class WoocommerceAddons
                 'id'   => 'globkurier-info',
                 'desc' => '<div>
 								<div class="udi-container-column udi-globkurier-how-to-start-container">
-									<h3 class="udi-globkurier-how-to-start-header">'.__('Jak rozpocząć', 'globkurier').'</h3>
+									<h3 class="udi-globkurier-how-to-start-header">'.esc_html__('Jak rozpocząć', 'globkurier').'</h3>
 										<ol class="udi-globkurier-how-to-start-list">
-											<li>'.__('Uzupełnij dane Użytkownik GlobKurier', 'globkurier').'</li>
-											<li>'.__('Uzupełnij dane domyślne', 'globkurier').'</li>
-											<li>'.__('Gotowe', 'globkurier').'!</li>
+											<li>'.esc_html__('Uzupełnij dane Użytkownik GlobKurier', 'globkurier').'</li>
+											<li>'.esc_html__('Uzupełnij dane domyślne', 'globkurier').'</li>
+											<li>'.esc_html__('Gotowe', 'globkurier').'!</li>
 										</ol>
 								</div>'
-                    .__('Nie masz konta?', 'globkurier').' <a href="http://globkurier.pl/register" target="_blank">'.__('Zarejestruj się', 'globkurier').'</a>'
+                    .esc_html__('Nie masz konta?', 'globkurier').' <a href="http://globkurier.pl/register" target="_blank">'.esc_html__('Zarejestruj się', 'globkurier').'</a>'
                     .'</div>',
                 'type' => 'title',
             ];
@@ -303,26 +326,31 @@ class WoocommerceAddons
             } else {
                 $settings_globkurier = array_merge($settings_globkurier, $this->getSettingsSection_login());
                 $settings_globkurier = array_merge($settings_globkurier, $this->getSettingsSection_defaults());
+                $settings_globkurier = array_merge($settings_globkurier, $this->getSettingsSection_orderList());
 
-                if (sanitize_text_field($_GET[ 'updateInpostPoints' ] ?? '')) {
+                // Odswiezanie punktow linkiem (GET) tylko z nonce'em i dla obslugi sklepu - inaczej bylby to CSRF.
+                $canUpdatePoints = (current_user_can('manage_woocommerce') || current_user_can('manage_options'))
+                    && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET[ '_wpnonce' ] ?? '')), 'globkurier_update_points_nonce');
+
+                if ($canUpdatePoints && sanitize_text_field(wp_unslash($_GET[ 'updateInpostPoints' ] ?? ''))) {
                     $globKurier->inpost()->update();
-                    wp_redirect($globKurier->getSettingsUrl().'&updateInpostSuccess');
+                    wp_safe_redirect($globKurier->getSettingsUrl().'&updateInpostSuccess');
                     wp_die();
                 }
 
-                if (sanitize_text_field($_GET[ 'updateRuchPoints' ] ?? '')) {
+                if ($canUpdatePoints && sanitize_text_field(wp_unslash($_GET[ 'updateRuchPoints' ] ?? ''))) {
                     $globKurier->ruch()->update();
-                    wp_redirect($globKurier->getSettingsUrl().'&updateRuchSuccess');
+                    wp_safe_redirect($globKurier->getSettingsUrl().'&updateRuchSuccess');
                     wp_die();
                 }
 
-                if (sanitize_text_field($_GET[ 'updateInpostSuccess' ] ?? '')) {
+                if (sanitize_text_field(wp_unslash($_GET[ 'updateInpostSuccess' ] ?? ''))) {
                     echo "<div class=\"notice notice-info\">";
                     echo "<p>".esc_attr(__('Paczkomaty zostały zaktualizowane', 'globkurier'))."</p>";
                     echo '</div>';
                 }
 
-                if (sanitize_text_field($_GET[ 'updateRuchSuccess' ] ?? '')) {
+                if (sanitize_text_field(wp_unslash($_GET[ 'updateRuchSuccess' ] ?? ''))) {
                     echo "<div class=\"notice notice-info\">";
                     echo "<p>".esc_attr(__('Punkt RUCHu zostały zaktualizowane', 'globkurier'))."</p>";
                     echo '</div>';
@@ -373,6 +401,34 @@ class WoocommerceAddons
         $settings_inputs[] = ['type' => 'sectionend', 'id' => 'globkurier-login-end'];
 
         return $settings_inputs;
+    }
+
+    /**
+     * Lista zamowien WooCommerce: dodatkowa kolumna "Wysylka" (BulkSend). Domyslnie wlaczona - jak dotad.
+     */
+    public function getSettingsSection_orderList()
+    {
+        return [
+            ['type' => 'udisectionstart'],
+            [
+                'title' => __('Lista zamówień', 'globkurier'),
+                'type'  => 'title',
+            ],
+            [
+                'title'   => __('Kolumna "Wysyłka" na liście zamówień', 'globkurier'),
+                'name'    => 'globkurier[order_list_shipping_column]',
+                'id'      => 'globkurier[order_list_shipping_column]',
+                'value'   => get_option('globkurier')[ 'order_list_shipping_column' ] ?? 1,
+                'type'    => 'select',
+                'options' => [
+                    1 => __('TAK', 'globkurier'),
+                    0 => __('NIE', 'globkurier'),
+                ],
+                'desc'    => __('WooCommerce pokazuje metodę wysyłki także w kolumnie "Wysyłka do". Wyłączenie kolumny przyspiesza listę zamówień przy wielu zamówieniach i wtyczkach tłumaczeń (WPML). Kolumnę można też ukryć tylko dla siebie w "Opcjach ekranu".', 'globkurier'),
+            ],
+            ['type' => 'sectionend', 'id' => 'globkurier-order-list-end'],
+            ['type' => 'udisectionend'],
+        ];
     }
 
     public function getSettingsSection_defaults()
@@ -819,7 +875,8 @@ class WoocommerceAddons
 			$optionKey = 'extra_pickup_point_'.$carrierId;
 			
             $settings_inputs[] = [
-                'title' => __('Wybierz przewoźnika do obsługi '.$product[ 'carrierName' ], 'globkurier'),
+                /* translators: %s: nazwa przewoznika */
+                'title' => sprintf(__('Wybierz przewoźnika do obsługi %s', 'globkurier'), $product[ 'carrierName' ]),
 
                 'name' => 'globkurier['.$optionKey.']',
                 'id'   => 'globkurier['.$optionKey.']',
@@ -847,11 +904,19 @@ class WoocommerceAddons
 	
 	public function cleanupRemovedCarriers($value, $old_value)
 	{
+		// Logowanie do API i pobranie produktow tylko przy poprawnym zapisie formularza ustawien.
+		if (! $this->isSettingsFormSubmit() || ! $this->settingsNonceValid()) {
+			return $value;
+		}
+
+		// Zapis ustawien = odswiezenie list z API trzymanych w cache (metody platnosci, przewoznicy z punktami).
+		GlobKurierUser::forgetPaymentMethodsCache();
+
 		if($this->globKurier->api()->testToken() !== 200){
 			return $value;
 		}
-		
-		$productsWithPoint = $this->globKurier->extraPickupPoints()->getAvailablePoints();
+
+		$productsWithPoint = $this->globKurier->extraPickupPoints()->getAvailablePoints(true);
 		
 		$validCarrierIds = [];
 		foreach ($productsWithPoint as $product) {
@@ -871,7 +936,25 @@ class WoocommerceAddons
 		
 		return $value;
 	}
-	
+
+	/**
+	 * Zmiana loginu lub hasla (takze spoza formularza, np. WP-CLI) usuwa token poprzedniego konta - isUserLoggedIn()
+	 * ufa tokenowi z cache, wiec bez tego nowe dane nie bylyby sprawdzane do jego wygasniecia (ok. 20 h).
+	 * Dla add_option pierwszy argument to nazwa opcji, drugi - nowa wartosc.
+	 */
+	public function forgetApiSessionOnCredentialsChange($oldValue, $newValue)
+	{
+		$old = is_array($oldValue) ? $oldValue : [];
+		$new = is_array($newValue) ? $newValue : [];
+
+		if (($old[ 'username' ] ?? '') === ($new[ 'username' ] ?? '') && ($old[ 'password' ] ?? '') === ($new[ 'password' ] ?? '')) {
+			return;
+		}
+
+		$this->globKurier->api()->forgetToken();
+		GlobKurierUser::forgetPaymentMethodsCache();
+	}
+
 
     public function afterShippingMethodSelected($method, $index)
     {
@@ -907,7 +990,6 @@ class WoocommerceAddons
                 $inpost_id  = WC()->session->get('globkurier_inpost_selected_point_id') ?? '';
                 $inpost_val = WC()->session->get('globkurier_inpost_selected_point_value') ?? '';
 
-                $allPoints = $globKurier->inpost()->getAllPoints();
 
                 ?>
                 </li>
@@ -927,14 +1009,13 @@ class WoocommerceAddons
                     </select>
 
                     <script>
+                        // Bez pustych linii w tym skrypcie: checkout w bloku Shortcode przepuszcza HTML przez wpautop, ktory w pustych liniach wstawia znaczniki akapitu i psuje JS.
                         ( function ( $ ) {
                             $( function () {
-
                                 const globkurierInput = '#globkurier_inpost_input';
                                 const globkurierInputHiddenValue = '#globkurier_inpost_input_hidden_value';
                                 const ajaxurl = data[ 'ajaxUrl' ];
                                 const saveSessionAction = 'globkurierSaveInpostPointsSession';
-
                                 function gkSaveSession( d ) {
                                     $.post( {
                                         url: ajaxurl,
@@ -948,7 +1029,6 @@ class WoocommerceAddons
                                         },
                                     } );
                                 }
-
                                 function matchStart( params, data ) {
                                     params.term = params.term || '';
                                     if ( data.text.toUpperCase().indexOf( params.term.toUpperCase() ) == 0 ) {
@@ -956,7 +1036,6 @@ class WoocommerceAddons
                                     }
                                     return null;
                                 }
-
                                 $( document ).find( '.udi-select2#udi-select-inpost' ).select2( {
                                     placeholder: 'Znajdź punkt dostawy',
                                     language: {
@@ -989,7 +1068,6 @@ class WoocommerceAddons
                                         },
                                         processResults: function ( data ) {
                                             let parsedData = JSON.parse( data );
-
                                             let options = [];
                                             if ( parsedData ) {
                                                 $.each( parsedData, function ( index, data ) {
@@ -1013,20 +1091,16 @@ class WoocommerceAddons
                                     minimumInputLength: 3,
                                 } ).on( 'select2:select', function ( e ) {
                                     let option = $( e.params.data )[ 0 ];
-
                                     $( globkurierInput ).val( option.text );
                                     $( globkurierInputHiddenValue ).val( option.id );
-
                                     gkSaveSession( {
                                         id: option.id,
                                         value: option.text,
                                     } );
                                 } );
-
                                 <?php if( isset($inpost_id) && $inpost_id != '' ){?>
-                                $( document ).find( '.globkurier-inpost-container .select2-selection__rendered' ).text( '<?php echo esc_attr($inpost_val) ?>' );
+                                $( document ).find( '.globkurier-inpost-container .select2-selection__rendered' ).text( <?php echo wp_json_encode( $inpost_val, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP ) ?> );
                                 <?php } ?>
-
                             } );
                         } )( jQuery );
                     </script>
@@ -1053,22 +1127,15 @@ class WoocommerceAddons
 
                     <select style="width: 100%; display: none" class="udi-select2" id="udi-select-ruch" name="globkurier_ruch_input_value">
                         <option></option>
-                        <?php
-                        foreach ($allPoints ?? [] as $point) {
-                            echo "<option value='".esc_attr($point[ 'id' ])."'>".esc_attr($point[ 'value' ])."</option>";
-                        }
-                        ?>
                     </select>
                     <script>
+                        // Bez pustych linii w tym skrypcie: checkout w bloku Shortcode przepuszcza HTML przez wpautop, ktory w pustych liniach wstawia znaczniki akapitu i psuje JS.
                         ( function ( $ ) {
                             $( function () {
-
                                 const ajaxurl = data[ 'ajaxUrl' ];
-
                                 const globkurierInput = '#globkurier_ruch_input';
                                 const globkurierInputHiddenValue = '#globkurier_ruch_input_hidden_value';
                                 const saveSessionAction = 'globkurierSaveRuchPointsSession';
-
                                 function matchStart( params, data ) {
                                     params.term = params.term || '';
                                     if ( data.text.toUpperCase().indexOf( params.term.toUpperCase() ) == 0 ) {
@@ -1076,7 +1143,6 @@ class WoocommerceAddons
                                     }
                                     return null;
                                 }
-
                                 function gkSaveSession( d ) {
                                     $.post( {
                                         url: ajaxurl,
@@ -1090,7 +1156,6 @@ class WoocommerceAddons
                                         },
                                     } );
                                 }
-
                                 $( document ).find( '.udi-select2#udi-select-ruch' ).select2( {
                                     placeholder: 'Znajdź punkt dostawy',
                                     language: {
@@ -1123,7 +1188,6 @@ class WoocommerceAddons
                                         },
                                         processResults: function ( data ) {
                                             let parsedData = JSON.parse( data );
-
                                             let options = [];
                                             if ( parsedData ) {
                                                 $.each( parsedData, function ( index, data ) {
@@ -1146,17 +1210,15 @@ class WoocommerceAddons
                                     },
                                 } ).on( 'select2:select', function ( e ) {
                                     let option = $( e.params.data );
-
                                     $( globkurierInput ).val( option[ 0 ].text );
                                     $( globkurierInputHiddenValue ).val( option[ 0 ].id );
-
                                     gkSaveSession( {
                                         id: option[ 0 ].id,
                                         value: option[ 0 ].text,
                                     } );
                                 } );
                                 <?php if( isset($r_val) && $r_val != '' ){?>
-                                $( document ).find( '.globkurier-ruch-container .select2-selection__rendered' ).text( '<?php echo esc_attr($r_val) ?>' );
+                                $( document ).find( '.globkurier-ruch-container .select2-selection__rendered' ).text( <?php echo wp_json_encode( $r_val, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP ) ?> );
                                 <?php } ?>
                             } );
                         } )( jQuery );
@@ -1181,9 +1243,12 @@ class WoocommerceAddons
 
     public function globkurier_woocommerce_after_checkout_validation($fields, $errors)
     {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- walidacja checkoutu: WooCommerce weryfikuje nonce (woocommerce-process-checkout-nonce) przed tym hookiem.
         global $globKurier;
 
-        $methodId = sanitize_text_field($_POST[ 'globkurier_method_id' ] ?? '');
+        // Metoda wybrana w checkoucie (dane WC, to samo zrodlo co przy zapisie meta), a nie ukryte pole
+        // globkurier_method_id - po jego podmianie walidacja punktu byla pomijana.
+        $methodId = sanitize_text_field((string) ($fields[ 'shipping_method' ][ 0 ] ?? ''));
 
         $globkurierInpost = [
             'active'   => $globKurier->settings('inpost_active') ?? '',
@@ -1196,16 +1261,17 @@ class WoocommerceAddons
         ];
 
         if ($globkurierInpost[ 'active' ] && $globkurierInpost[ 'methodId' ] === $methodId) {
-            if (empty(sanitize_text_field($_POST[ 'globkurier_inpost_input' ])) || empty(sanitize_text_field($_POST[ 'globkurier_inpost_input_hidden_value' ]))) {
+            if (empty(sanitize_text_field(wp_unslash($_POST[ 'globkurier_inpost_input' ] ?? ''))) || empty(sanitize_text_field(wp_unslash($_POST[ 'globkurier_inpost_input_hidden_value' ] ?? '')))) {
                 $errors->add('required-field', __('<strong>Paczkomat InPost</strong> jest niepoprawny', 'globkurier'));
             }
         }
 
         if ($globkurierRuch[ 'active' ] && $globkurierRuch[ 'methodId' ] === $methodId) {
-            if (empty(sanitize_text_field($_POST[ 'globkurier_ruch_input' ])) || empty(sanitize_text_field($_POST[ 'globkurier_ruch_input_hidden_value' ]))) {
+            if (empty(sanitize_text_field(wp_unslash($_POST[ 'globkurier_ruch_input' ] ?? ''))) || empty(sanitize_text_field(wp_unslash($_POST[ 'globkurier_ruch_input_hidden_value' ] ?? '')))) {
                 $errors->add('required-field', __('<strong>Punkt Orlen Paczki</strong> jest niepoprawny', 'globkurier'));
             }
         }
+        // phpcs:enable
     }
 
     public function globkurier_woocommerce_admin_order_items_after_line_items($item_id, $item)
@@ -1213,6 +1279,7 @@ class WoocommerceAddons
         if ($item instanceof WC_Order_Item_Shipping) {
             global $globKurier;
 
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- ID zamowienia z adresu ekranu edycji (HPOS), tylko odczyt.
             $order_id = get_the_ID() ?: (absint($_GET[ 'id' ] ?? null) ?: null);
 
 			if( !$order_id ){
@@ -1285,7 +1352,8 @@ class WoocommerceAddons
                                 <tbody>
                                 <tr>
                                     <th><?php
-                                        echo esc_attr(__('Pubkt odbioru '.$carrierId, 'globkurier')) ?>:
+                                        /* translators: %s: identyfikator przewoznika */
+                                        echo esc_attr(sprintf(__('Punkt odbioru %s', 'globkurier'), $carrierId)) ?>:
                                     </th>
                                     <td>
                                         <p><?php
@@ -1306,7 +1374,8 @@ class WoocommerceAddons
     {
         $shipping_method = sanitize_text_field($data[ 'shipping_method' ][ 0 ] ?? '');
 
-        $this->setOrderMeta($order_id, $shipping_method, $_POST);
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- WooCommerce weryfikuje nonce checkoutu (woocommerce-process-checkout-nonce) przed tym hookiem.
+        $this->setOrderMeta($order_id, $shipping_method, map_deep(wp_unslash($_POST), 'sanitize_text_field'));
     }
 
     public function setOrderMeta($order_id, $methodId, $data)
@@ -1352,11 +1421,13 @@ class WoocommerceAddons
 
 	public function renderReturnsBanner()
 	{
-		if (!isset($_GET['page'], $_GET['tab'], $_GET['section'])
-			|| $_GET['page'] !== 'wc-settings'
-			|| $_GET['tab'] !== 'shipping'
-			|| $_GET['section'] !== 'globkurier'
-		) {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- parametry adresu ekranu ustawien tylko do decyzji o wyswietleniu banera.
+		$page    = sanitize_text_field(wp_unslash($_GET['page'] ?? ''));
+		$tab     = sanitize_text_field(wp_unslash($_GET['tab'] ?? ''));
+		$section = sanitize_text_field(wp_unslash($_GET['section'] ?? ''));
+		// phpcs:enable
+
+		if ($page !== 'wc-settings' || $tab !== 'shipping' || $section !== 'globkurier') {
 			return;
 		}
 		?>
@@ -1383,6 +1454,7 @@ class WoocommerceAddons
 			</a>
 		</div>
 		<script>
+			// Bez pustych linii w tym skrypcie: checkout w bloku Shortcode przepuszcza HTML przez wpautop, ktory w pustych liniach wstawia znaczniki akapitu i psuje JS.
 			document.querySelector('.globkurier-returns-banner__close')?.addEventListener('click', function() {
 				document.getElementById('globkurier-returns-banner').style.display = 'none';
 			});

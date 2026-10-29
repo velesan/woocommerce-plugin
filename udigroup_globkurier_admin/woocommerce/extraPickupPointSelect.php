@@ -1,8 +1,11 @@
 <?php
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- szablon dolaczany wewnatrz funkcji (domkniecie w WoocommerceAddons::init() i WoocommerceAddons::afterShippingMethodSelected()), zmienne sa lokalne, nie globalne.
 /**
  * @var string $key
  * @var string $method
  */
+
+if (!defined('ABSPATH')) exit; // Exit if accessed directly
 
 use udigroup_globkurier\UDIGroup_Helper;
 
@@ -52,17 +55,17 @@ if($hasMap){
 <input type='hidden'
        name='globkurier_method_id'
        id='globkurier_method_id'
-       value="<?= esc_attr($method) ?>">
+       value="<?php echo esc_attr($method) ?>">
 
 <input type='hidden'
-       name='<?= esc_attr($fields[ 'idField' ]) ?>'
-       id='<?= esc_attr($fields[ 'idField' ]) ?>'
+       name='<?php echo esc_attr($fields[ 'idField' ]) ?>'
+       id='<?php echo esc_attr($fields[ 'idField' ]) ?>'
        value="<?php
 	   echo esc_attr($point_val) ?>"
        required>
 
-<input type='hidden' name='<?= esc_attr($fields[ 'valueField' ]) ?>'
-       id='<?= esc_attr($fields[ 'valueField' ]) ?>'
+<input type='hidden' name='<?php echo esc_attr($fields[ 'valueField' ]) ?>'
+       id='<?php echo esc_attr($fields[ 'valueField' ]) ?>'
        value="<?php
 	   echo esc_attr($point_id) ?>"
        required>
@@ -70,8 +73,8 @@ if($hasMap){
 <select type='text'
 		        style='width: 100%;'
 		        class='udi-select2'
-		        id='<?= esc_attr($fields[ 'selectField' ]) ?>'
-		        name='<?= esc_attr($fields[ 'selectField' ] ?? '') ?>'>
+		        id='<?php echo esc_attr($fields[ 'selectField' ]) ?>'
+		        name='<?php echo esc_attr($fields[ 'selectField' ] ?? '') ?>'>
 			<?php
 			if (isset($point_id)) {
 				echo "<option value='".esc_attr($point_id)."' selected>".esc_attr($point_val).'</option>';
@@ -89,31 +92,30 @@ if($hasMap){
 ?>
 
 <script>
+	// Bez pustych linii w tym skrypcie: checkout w bloku Shortcode przepuszcza HTML przez wpautop, ktory w pustych liniach wstawia znaczniki akapitu i psuje JS.
 	( function ( $ ) {
 		$( function () {
 			const params = {
 				product: {
-					id: '<?= esc_js($productId) ?>',
+					id: '<?php echo esc_js($productId) ?>',
 				},
 				carrier: {
-					id: '<?= esc_js($carrierId) ?>',
+					id: '<?php echo esc_js($carrierId) ?>',
 				},
 				fields: {
-					idField: '<?= esc_js($fields[ 'idField' ] ?? '') ?>',
-					valueField: '<?= esc_js($fields[ 'valueField' ] ?? '') ?>',
-					selectField: '<?= esc_js($fields[ 'selectField' ] ?? '') ?>',
+					idField: '<?php echo esc_js($fields[ 'idField' ] ?? '') ?>',
+					valueField: '<?php echo esc_js($fields[ 'valueField' ] ?? '') ?>',
+					selectField: '<?php echo esc_js($fields[ 'selectField' ] ?? '') ?>',
 				},
 				actions: {
-					search: '<?= esc_js($actions[ 'search' ] ?? '') ?>',
-					saveSession: '<?= esc_js($actions[ 'saveSession' ] ?? '') ?>',
-					getSessionData: '<?= esc_js($actions[ 'getSessionData' ] ?? '') ?>',
+					search: '<?php echo esc_js($actions[ 'search' ] ?? '') ?>',
+					saveSession: '<?php echo esc_js($actions[ 'saveSession' ] ?? '') ?>',
+					getSessionData: '<?php echo esc_js($actions[ 'getSessionData' ] ?? '') ?>',
 				},
-				wrapperId: '<?= esc_js($wrapperId) ?>',
+				wrapperId: '<?php echo esc_js($wrapperId) ?>',
 				ajax_url: data[ 'ajaxUrl' ],
 			};
-			
 			const selectTarget = '#' + params.fields.selectField;
-
 			const gkGetShippingCountry = () => {
 				let country = '';
 				if ( $( '#ship-to-different-address-checkbox' ).is( ':checked' ) ) {
@@ -124,7 +126,6 @@ if($hasMap){
 				}
 				return country;
 			}
-
 			const gkSaveSession = ( d ) => {
 				$( document ).find( '#' + params.fields.idField, '#' + params.wrapperId ).val( d.value || d.text ).change();
 				$( document ).find( '#' + params.fields.valueField, '#' + params.wrapperId ).val( d.id ).change();
@@ -144,11 +145,10 @@ if($hasMap){
 						openingHours: d.openingHours,
 						productId: params.product.id,
 						carrierId: params.carrier.id,
+						nonce: '<?php echo esc_js(wp_create_nonce('globkurier_save_extra_pickup_points_session_nonce')) ?>',
 					},
 				} );
 			}
-			
-			
 			$( document ).find( selectTarget ).select2( {
 				placeholder: 'Znajdź punkt dostawy',
 				language: {
@@ -184,15 +184,6 @@ if($hasMap){
 						let options = [];
 						if ( parsedData ) {
 							$.each( parsedData, function ( index, data ) {
-								console.log( {
-									id: data.id,
-									text: data.name,
-									latitude: data.latitude,
-									longitude: data.longitude,
-									city: data.city,
-									address: data.address,
-									openingHours: data.openingHours,
-								} );
 								options.push( {
 									id: data.id,
 									text: data.name + ', ' + data.address + ' [' + data.id + ']',
@@ -203,7 +194,6 @@ if($hasMap){
 									openingHours: data.openingHours,
 								} );
 							} );
-							
 						}
 						return {
 							results: options
@@ -217,7 +207,6 @@ if($hasMap){
 					e.params.data,
 				);
 			} );
-			
 		} );
 	} )( jQuery );
 </script>

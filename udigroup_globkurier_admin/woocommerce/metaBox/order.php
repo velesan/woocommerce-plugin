@@ -1,5 +1,7 @@
 <?php
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- szablon dolaczany wewnatrz funkcji (WoocommerceAddons::globkurier_meta_box_content(), UDIGroup_Admin_Ajax::globkurierCreateOrdersAsync() i szablon strony nadania), zmienne sa lokalne, nie globalne.
 
+use udigroup_globkurier\GlobKurierCountries;
 use udigroup_globkurier\UDIGroup_Helper;
 
 if (! defined('ABSPATH')) {
@@ -19,45 +21,45 @@ if ($statusIsOk) {
 	<input type='hidden' id='globkurier_create_order_order_id' value="<?php
 	echo esc_attr($orderId); ?>">
 	<input type='hidden' id='globkurier_create_order_nonce' value="<?php
-	echo wp_create_nonce('globkurier_create_order_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_create_order_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_products_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_products_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_products_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_product_addons_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_product_addons_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_product_addons_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_custom_required_fields_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_custom_required_fields_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_custom_required_fields_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_first_pickup_day_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_first_pickup_day_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_first_pickup_day_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_product_addon_fields_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_product_addon_fields_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_product_addon_fields_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_pickup_time_ranges_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_pickup_time_ranges_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_pickup_time_ranges_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_price_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_price_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_price_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_payments_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_payments_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_payments_nonce')); ?>">
 	<input type='hidden' id='globkurier_order_nonce' value="<?php
-	echo wp_create_nonce('globkurier_order_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_order_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_current_status_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_current_status_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_current_status_nonce')); ?>">
 	<input type='hidden' id='globkurier_save_inpost_points_session_nonce' value="<?php
-	echo wp_create_nonce('globkurier_save_inpost_points_session_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_save_inpost_points_session_nonce')); ?>">
 	<input type='hidden' id='globkurier_save_ruch_points_session_nonce' value="<?php
-	echo wp_create_nonce('globkurier_save_ruch_points_session_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_save_ruch_points_session_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_inpost_points_select2_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_inpost_points_select2_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_inpost_points_select2_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_ruch_points_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_ruch_points_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_ruch_points_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_person_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_person_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_person_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_inpost_points_select2_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_inpost_points_select2_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_inpost_points_select2_nonce')); ?>">
 	<input type='hidden' id='globkurier_get_ruch_points_select2_nonce' value="<?php
-	echo wp_create_nonce('globkurier_get_ruch_points_select2_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_get_ruch_points_select2_nonce')); ?>">
 	<input type='hidden' id='globkurier_add_person_to_address_book_nonce' value="<?php
-	echo wp_create_nonce('globkurier_add_person_to_address_book_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_add_person_to_address_book_nonce')); ?>">
 	<input type='hidden' id='globkurier_update_person_to_address_book_nonce' value="<?php
-	echo wp_create_nonce('globkurier_update_person_to_address_book_nonce'); ?>">
+	echo esc_attr(wp_create_nonce('globkurier_update_person_to_address_book_nonce')); ?>">
 
 
 	<div class="globkurier-notices-container">
@@ -104,13 +106,10 @@ if ($statusIsOk) {
 	<?php
 	
 	global $wpdb;
-	
-	$ghostPostID = wp_insert_post([
-		'post_title' => 'globkurier_ghost_post_do_not_delete',
-		'post_type'  => 'globkurier_ghost',
-	], true);
-	
-	$defaults          = $globKurier->settings('default');
+
+	// Post "ghost" dla nadan bez zamowienia WC tworzy (raz) GlobKurier::getGhostPostID() - tu nie jest potrzebny.
+
+	$defaults         = $globKurier->settings('default');
 	$defaultSenderData = apply_filters('globkurier_sender_defaults', $defaults[ 'send' ] ?? []);
 	$defaultParcelData = apply_filters('globkurier_parcel_defaults', $defaults[ 'parcel' ] ?? []);
 	
@@ -150,6 +149,8 @@ if ($statusIsOk) {
 		foreach ($order->get_items() as $item) {
 			$id      = $item->get_product_id();
 			$product = wc_get_product($id);
+			// Wymiary i waga z wariacji - WooCommerce sam uzupelnia puste pola danymi produktu nadrzednego.
+			$sizeProduct = $item->get_variation_id() ? (wc_get_product($item->get_variation_id()) ?: $product) : $product;
 			$quantity = $item->get_quantity();
 			
 			$weight = $defaultWeight;
@@ -157,11 +158,11 @@ if ($statusIsOk) {
 			$width  = $defaultWidth;
 			$height = $defaultHeight;
 			
-			if ($product) {
-				$weight = ! empty($product->get_weight()) ? $product->get_weight() : $defaultWeight;
-				$length = ! empty($product->get_length()) ? $product->get_length() : $defaultLength;
-				$width  = ! empty($product->get_width()) ? $product->get_width() : $defaultWidth;
-				$height = ! empty($product->get_height()) ? $product->get_height() : $defaultHeight;
+			if ($product && $sizeProduct) {
+				$weight = ! empty($sizeProduct->get_weight()) ? $sizeProduct->get_weight() : $defaultWeight;
+				$length = ! empty($sizeProduct->get_length()) ? $sizeProduct->get_length() : $defaultLength;
+				$width  = ! empty($sizeProduct->get_width()) ? $sizeProduct->get_width() : $defaultWidth;
+				$height = ! empty($sizeProduct->get_height()) ? $sizeProduct->get_height() : $defaultHeight;
 				
 				$productSKUs[] = apply_filters('globkurier_product_sku', $product->get_sku() ?? '', $product);
 				$productEANs[] = apply_filters('globkurier_product_ean', $product->get_global_unique_id() ?? '', $product);
@@ -260,7 +261,7 @@ if ($statusIsOk) {
 		$pointType = $extraPickupCarrierId;
 		$pointCode = $extraPickupCarrierValue;
 		$pointName = $extraPickupCarrierId;
-		$pointText = ucfirst(__($extraPickupCarrierId, 'globkurier')).': '.$extraPickupCarrierValue;
+		$pointText = ucfirst((string) $extraPickupCarrierId).': '.$extraPickupCarrierValue;
 	}
 	
 	$addSKUToContent = $globKurier->settings('content_add_sku') ?? 0;
@@ -502,7 +503,7 @@ if ($statusIsOk) {
 					<option disabled selected><?php
 						echo esc_attr(__('Kraj', 'globkurier')) ?></option>
 					<?php
-					echo $globKurier->countries()->getDropdown($defaultSenderData[ 'country' ] ?? null); ?>
+					echo wp_kses($globKurier->countries()->getDropdown($defaultSenderData[ 'country' ] ?? null), GlobKurierCountries::DROPDOWN_ALLOWED_HTML); ?>
 				</select>
 			</div>
 
@@ -622,7 +623,7 @@ if ($statusIsOk) {
 					<option disabled selected><?php
 						echo esc_attr(__('Kraj', 'globkurier')) ?></option>
 					<?php
-					echo($globKurier->countries()->getDropdown($receiverData[ 'country' ] ?? null, 'code')); ?>
+					echo wp_kses($globKurier->countries()->getDropdown($receiverData[ 'country' ] ?? null, 'code'), GlobKurierCountries::DROPDOWN_ALLOWED_HTML); ?>
 				</select>
 			</div>
 
@@ -782,7 +783,7 @@ if ($statusIsOk) {
 		$skuContent = apply_filters('globkurier_sku_content', $skuContent, $order ?? null);
 		?>
 		
-		<input type="hidden" name="globkurier[sku_content]" id="sku_content" value="<?= $skuContent ?>"/>
+		<input type="hidden" name="globkurier[sku_content]" id="sku_content" value="<?php echo esc_attr($skuContent) ?>"/>
 		
 		<br>
 		
@@ -941,29 +942,29 @@ if ($statusIsOk) {
 
 		<div class="udi-step-select-product-details-right">
 			<div class="udi-service-options">
-				<div class="udi-service-options-header"><?= esc_attr(__('Opcje nadania', 'globkurier')) ?>:</div>
+				<div class="udi-service-options-header"><?php echo esc_attr(__('Opcje nadania', 'globkurier')) ?>:</div>
 				<div class="udi-service-options-body">
 
 					<div style="display: contents">
 						<div class=udi-options-body-row" style="display: contents;">
-							<label class="udi-options-body-label"><?= esc_attr(__('Nadanie przesyłki', 'globkurier')) ?>:</label>
+							<label class="udi-options-body-label"><?php echo esc_attr(__('Nadanie przesyłki', 'globkurier')) ?>:</label>
 							<div class="" style="margin-left: 10px;">
 								<input type="radio" id="globkurier-pickup-type-PICKUP" data-pickuptype="PICKUP" name="globkurier-pickup-type" value="PICKUP">
-								<label for="globkurier-pickup-type-PICKUP"><?= esc_attr(__('Przesyłkę odbierze kurier', 'globkurier')) ?></label><br>
+								<label for="globkurier-pickup-type-PICKUP"><?php echo esc_attr(__('Przesyłkę odbierze kurier', 'globkurier')) ?></label><br>
 								
 								<input type="radio" id="globkurier-pickup-type-POINT" data-pickuptype="POINT" name="globkurier-pickup-type" value="POINT">
-								<label for='globkurier-pickup-type-POINT'><?= esc_attr(__('Nadam przesyłkę w terminalu', 'globkurier')) ?></label><br>
+								<label for='globkurier-pickup-type-POINT'><?php echo esc_attr(__('Nadam przesyłkę w terminalu', 'globkurier')) ?></label><br>
 								
 								<input type="radio" id="globkurier-pickup-type-CROSSBORDER" data-pickuptype="CROSSBORDER" name="globkurier-pickup-type" value="CROSSBORDER">
-								<label for="globkurier-pickup-type-POINT"><?= esc_attr(__('Nadam przesyłkę w terminalu', 'globkurier')) ?></label><br>
+								<label for="globkurier-pickup-type-POINT"><?php echo esc_attr(__('Nadam przesyłkę w terminalu', 'globkurier')) ?></label><br>
 							</div>
 						</div>
 
 						<div class="globkurier-not-pickup udi-options-body-row" style="display: contents;">
-							<label class="udi-options-body-label" for="globkurier-service-date-picker"><?= esc_attr(__('Data nadania', 'globkurier')) ?>:</label>
+							<label class="udi-options-body-label" for="globkurier-service-date-picker"><?php echo esc_attr(__('Data nadania', 'globkurier')) ?>:</label>
 							<div class="udi-input-with-notice">
 								<input type="text" style="flex-basis: 100%; background-color: inherit !important;" id="globkurier-service-date-picker" readonly>
-								<small><?= esc_attr(__('W jakim dniu kurier ma przyjechać po paczkę?', 'globkurier')) ?></small>
+								<small><?php echo esc_attr(__('W jakim dniu kurier ma przyjechać po paczkę?', 'globkurier')) ?></small>
 							</div>
 						</div>
 
@@ -1056,6 +1057,18 @@ if ($statusIsOk) {
 						echo esc_attr(__('Płatność', 'globkurier')) ?>:</label>
 						<div class="udi-input-with-notice">
 							<select style="width: 100%" name="globkurier-service-payment-picker" id="globkurier-service-payment-picker"></select>
+						</div>
+					</div>
+
+					<div style="display: contents;">
+						<label for="globkurier-contains-dangerous-goods" class="udi-options-body-label"><?php
+						echo esc_attr(__('Towary niebezpieczne', 'globkurier')) ?>:</label>
+						<div class="udi-input-with-notice">
+							<label>
+								<input type="checkbox" name="globkurier-contains-dangerous-goods" id="globkurier-contains-dangerous-goods" value="1">
+								<?php
+								echo esc_attr(__('Przesyłka zawiera towary niebezpieczne', 'globkurier')) ?>
+							</label>
 						</div>
 					</div>
 

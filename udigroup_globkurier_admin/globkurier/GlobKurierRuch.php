@@ -4,6 +4,12 @@ namespace udigroup_globkurier;
 
 class GlobKurierRuch extends GlobKurier
 {
+	/** Transient: trwa pelne pobieranie punktow ORLEN (jedno naraz). */
+	const UPDATE_LOCK = 'globkurier_ruch_points_updating';
+
+	/** Zdarzenie WP-Cron: odswiezenie listy punktow ORLEN w tle. */
+	const REFRESH_HOOK = 'globkurier_refresh_ruch_points';
+
 	protected $productId = 0;
 	protected $label = 'PACZKA_W_RUCHU';
 
@@ -19,7 +25,7 @@ class GlobKurierRuch extends GlobKurier
 	
 	public function getPoints($params)
 	{
-        $nonce = sanitize_text_field($_POST['nonce']);
+        $nonce = sanitize_text_field(wp_unslash($_POST['nonce'] ?? ''));
         if (!wp_verify_nonce($nonce, 'globkurier_get_ruch_points_nonce')) {
             wp_send_json_error('Invalid nonce');
         }
@@ -30,7 +36,7 @@ class GlobKurierRuch extends GlobKurier
 		$token = $this->api()->getToken();
 		$this->getProductId();
 		
-		$params[ 'id' ]        = strtoupper($this->_convert(sanitize_text_field($_POST[ 'city' ]) ?? ''));
+		$params[ 'id' ]        = strtoupper($this->_convert(sanitize_text_field(wp_unslash($_POST[ 'city' ] ?? '')) ?? ''));
 		$params[ 'productId' ] = $this->productId;
 		
 		$response = $this->api()->getResponse($function, $token, $params, $method);
@@ -40,7 +46,7 @@ class GlobKurierRuch extends GlobKurier
 			
 			$params[ 'productId' ]                     = $this->productId;
 			$params[ 'isCashOnDeliveryAddonSelected' ] = 'false';
-			$params[ 'city' ]                          = $this->_convert(sanitize_text_field($_POST[ 'city' ]) ?? '');
+			$params[ 'city' ]                          = $this->_convert(sanitize_text_field(wp_unslash($_POST[ 'city' ] ?? '')) ?? '');
 			
 			$response = $this->api()->getResponse($function, $token, $params, $method);
 		}
@@ -84,9 +90,9 @@ class GlobKurierRuch extends GlobKurier
 	
 	public function getPointsSelect2($paramsIn)
 	{
-		if (isset($paramsIn[ 'product_id' ]) && !empty($paramsIn[ 'product_id'])) {
-			$productId = $paramsIn[ 'product_id' ];
-			
+		$productId = absint($paramsIn[ 'product_id' ] ?? 0);
+
+		if ($productId) {
 			$filters = array_map(
 				'trim',
 				explode(' ', preg_replace('/[^[a-zA-Zą-źĄ-ŹŁł0-9 ]/', '', $paramsIn[ 'city' ] ?? ''))
@@ -101,7 +107,8 @@ class GlobKurierRuch extends GlobKurier
 			$filteredPoints = $allPoints;
 			$priorityPoints = [];
 			
-			foreach (explode(' ', $search) as $term) {
+			// Maks. 5 slow - kazde slowo to przejscie po calej liscie punktow (publiczna wyszukiwarka).
+			foreach (array_slice(explode(' ', $search), 0, 5) as $term) {
 				foreach ($allPoints as $key => $point) {
 					if (
 						mb_stripos($point[ 'id' ] ?? '', $term) === false
@@ -140,10 +147,11 @@ class GlobKurierRuch extends GlobKurier
 		return json_encode($pointsResponse);
 	}
 	
-	public function getAllPoints($update = false)
+	public function getAllPoints($update = false, bool $ignoreLock = false)
 	{
+		// Czas waznosci w sekundach (wczesniej omylkowo znacznik czasu ostatniego pobrania - odswiezanie nigdy nie ruszalo).
 		$ruchPointsValidTime = apply_filters('globkurier_ruch_points_valid_time',
-			get_option('udigroup_gkRuchPointsDownloadedAt', DAY_IN_SECONDS)
+			get_option('gkStoreRuchPointsValidTime', DAY_IN_SECONDS)
 		);
 		
 		$ruchPointsValidTimeChecker = apply_filters('globkurier_ruch_points_valid_time_checker_is_active',
@@ -170,17 +178,34 @@ class GlobKurierRuch extends GlobKurier
 		if (! $update && $oldPoints !== null) {
 			return $oldPoints;
 		}
-		
+
+		$stalePoints = function () use ($storeRuchPointsInFile){
+			return ($storeRuchPointsInFile ? $this->loadPointsFromFile(false, true) : get_option('udigroup_gkRuchPoints', null)) ?? [];
+		};
+
+		// Odswiezenie istniejacej listy w tle (WP-Cron), jak w GlobKurierInpost::getAllPointsFromInpost().
+		if (! $ignoreLock && ! wp_doing_cron()) {
+			$cached = $stalePoints();
+			if ($cached && UDIGroup_Helper::schedulePointsRefresh(self::REFRESH_HOOK)) {
+				return $cached;
+			}
+		}
+
+		// Pobieranie juz trwa albo niedawno sie nie udalo - zwracamy to, co jest w cache, zamiast pobierac rownolegle
+		// lub w kolko. Reczne odswiezanie z panelu ($ignoreLock) dziala zawsze.
+		if (! $ignoreLock && get_transient(self::UPDATE_LOCK)) {
+			return $stalePoints();
+		}
+		set_transient(self::UPDATE_LOCK, 1, 5 * MINUTE_IN_SECONDS);
+
 		$function = 'points';
 		$method   = 'GET';
-		
-		$this->getProductId();
-		
+
 		$params = [];
 
 		$params[ 'carrierName' ]                   = 'Orlen Paczka';
 		$params[ 'isCashOnDeliveryAddonSelected' ] = 'false';
-		
+
 		$response = $this->api()->getResponse($function, null, $params, $method);
 		
 		$points = apply_filters('globkurier_ruch_points', $response[ 'data' ]);
@@ -203,25 +228,34 @@ class GlobKurierRuch extends GlobKurier
 		}
 		
 		if (count($pointsResponse) == 0) {
-			wp_send_json_error('Brak Punktów Orlen do zapisu');
+			// Blokada zostaje na 5 minut (przerwa dla prob automatycznych); panel dostaje blad jak dotad,
+			// wyszukiwarka - dotychczasowy cache.
+			if ($ignoreLock) {
+				wp_send_json_error('Brak Punktów Orlen do zapisu');
+			}
+
+			return $stalePoints();
 		}
+
+		delete_transient(self::UPDATE_LOCK);
 		
 		if ($storeRuchPointsInFile) {
-			$filePath = apply_filters('globkurier_store_ruch_points_file_path',
-				__DIR__.'/orlen.json'
-			);
+			$filePath = apply_filters('globkurier_store_ruch_points_file_path', UDIGroup_Helper::pointsCacheFile('orlen.json'));
 			
 			try{
 				$ruchFileJsonContent = apply_filters('globkurier_ruch_file_json_content',
 					json_encode($pointsResponse, JSON_THROW_ON_ERROR)
 				);
-				file_put_contents($filePath, $ruchFileJsonContent);
+				if (! UDIGroup_Helper::writePointsCacheFile($filePath, $ruchFileJsonContent)) {
+					// Plik sie nie zapisal - nie kasujemy danych w bazie ani nie oznaczamy pobrania; wynik tylko dla tego zadania.
+					return $pointsResponse;
+				}
 				delete_option('udigroup_gkRuchPoints');
 			} catch (\JsonException $e){
 				wp_send_json_error('Błąd podczas zapisu do pliku');
 			}
 		} else {
-			update_option('udigroup_gkRuchPoints', $pointsResponse);
+			update_option('udigroup_gkRuchPoints', $pointsResponse, false);
 		}
 		
 		update_option('udigroup_gkRuchPointsDownloadedAt', time());
@@ -261,48 +295,21 @@ class GlobKurierRuch extends GlobKurier
 			}
 		}
 		
-		if (count($pointsResponse) == 0) {
-			wp_send_json_error('Brak Punktów Orlen do zapisu');
-		}
-		
-		$storeRuchPointsInFile = apply_filters('globkurier_store_ruch_points_in_file',
-			get_option('globkurier')[ 'storeRuchPointsInFile' ] ?? false
-		);
-		
-		if ($storeRuchPointsInFile) {
-			$filePath = apply_filters('globkurier_store_ruch_points_file_path',
-				__DIR__.'/orlen.json'
-			);
-			
-			try{
-				$ruchFileJsonContent = apply_filters('globkurier_ruch_file_json_content',
-					json_encode($pointsResponse, JSON_THROW_ON_ERROR)
-				);
-				file_put_contents($filePath, $ruchFileJsonContent);
-				delete_option('udigroup_gkRuchPoints');
-			} catch (\JsonException $e){
-				wp_send_json_error('Błąd podczas zapisu do pliku');
-			}
-		} else {
-			update_option('udigroup_gkRuchPoints', $pointsResponse);
-		}
-		
-		update_option('udigroup_gkRuchPointsDownloadedAt', time());
-		
+		// Tylko wynik wyszukiwania - bez zapisu do wspolnego cache punktow ORLEN (wczesniej kazde wyszukanie,
+		// takze anonimowe z dowolnym product_id, podmienialo liste punktow w checkoucie).
 		return $pointsResponse;
 	}
 	
 	public function loadPointsFromFile($raw = false, $updated = false)
 	{
-		$filePath = apply_filters('globkurier_store_ruch_points_file_path',
-			__DIR__.'/orlen.json'
-		);
+		$filePath = apply_filters('globkurier_store_ruch_points_file_path', UDIGroup_Helper::pointsCacheFile('orlen.json', true));
 		
 		if (! file_exists($filePath)) {
 			if ($updated) {
 				return null;
 			} else {
-				$this->update();
+				// Brak pliku - pobranie z blokada (rownolegle zadania gosci nie pobieraja naraz).
+				$this->getAllPoints(true);
 				
 				return $this->loadPointsFromFile($raw, true);
 			}
@@ -325,9 +332,10 @@ class GlobKurierRuch extends GlobKurier
 		return absint(time() - $downloadedAt);
 	}
 	
+	/** Reczne odswiezenie listy punktow (ustawienia, panel) - omija blokade pobierania. */
 	public function update()
 	{
-		$this->getAllPoints(true);
+		$this->getAllPoints(true, true);
 	}
 	
 	public function getProductId()
@@ -350,7 +358,8 @@ class GlobKurierRuch extends GlobKurier
 		], false);
 		
 		foreach ($products[ 'results' ] as $product) {
-			if ($product[ 'carrierName' ] === 'Orlen Paczka') {
+			// API zwraca 'ORLEN Paczka' - porownanie bez wielkosci liter (wczesniej productId zawsze 0).
+			if (strcasecmp((string) ($product[ 'carrierName' ] ?? ''), 'Orlen Paczka') === 0) {
 				$this->productId = $product[ 'id' ];
 			}
 		}

@@ -114,7 +114,8 @@ class GlobKurierProduct extends GlobKurier{
 				break;
 			case 'ruch':
 				foreach ($datas as $key => $data) {
-					if ($data[ 'carrierName' ] !== $ruchCarrierName) {
+					// API zwraca 'ORLEN Paczka' - porownanie bez wielkosci liter (wczesniej lista ORLEN byla pusta).
+					if (strcasecmp((string) ($data[ 'carrierName' ] ?? ''), $ruchCarrierName) !== 0) {
 						unset($datas[ $key ]);
 					}
 				}

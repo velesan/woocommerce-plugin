@@ -1,14 +1,17 @@
 <?php
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- szablon dolaczany wewnatrz funkcji (BulkSend::open_modal()), zmienne sa lokalne, nie globalne.
 /**
  * @var array $orders
  * @var GlobKurier $globKurier
  */
 
+if (!defined('ABSPATH')) exit; // Exit if accessed directly
+
 use udigroup_globkurier\UDIGroup_Helper;
 
 $ordersWithLinks = array_map(function ($order){
-	return '<a href="'.$order->get_edit_order_url().'" target="_blank">'
-		   .'#'.$order->get_order_number().' ('.$order->get_shipping_method().')'
+	return '<a href="'.esc_url($order->get_edit_order_url()).'" target="_blank">'
+		   .'#'.esc_html($order->get_order_number().' ('.$order->get_shipping_method().')')
 		   .'</a>';
 }, $orders);
 
@@ -63,6 +66,8 @@ foreach ($orders as $order) {
 	foreach ($order->get_items() as $item) {
 		$id       = $item->get_product_id();
 		$product  = wc_get_product($id);
+		// Wymiary i waga z wariacji - WooCommerce sam uzupelnia puste pola danymi produktu nadrzednego.
+		$sizeProduct = $item->get_variation_id() ? (wc_get_product($item->get_variation_id()) ?: $product) : $product;
 		$quantity = $item->get_quantity();
 		
 		$weight = $defaultWeight;
@@ -70,11 +75,11 @@ foreach ($orders as $order) {
 		$width  = $defaultWidth;
 		$height = $defaultHeight;
 		
-		if ($product) {
-			$weight = ! empty($product->get_weight()) ? $product->get_weight() : $defaultWeight;
-			$length = ! empty($product->get_length()) ? $product->get_length() : $defaultLength;
-			$width  = ! empty($product->get_width()) ? $product->get_width() : $defaultWidth;
-			$height = ! empty($product->get_height()) ? $product->get_height() : $defaultHeight;
+		if ($product && $sizeProduct) {
+			$weight = ! empty($sizeProduct->get_weight()) ? $sizeProduct->get_weight() : $defaultWeight;
+			$length = ! empty($sizeProduct->get_length()) ? $sizeProduct->get_length() : $defaultLength;
+			$width  = ! empty($sizeProduct->get_width()) ? $sizeProduct->get_width() : $defaultWidth;
+			$height = ! empty($sizeProduct->get_height()) ? $sizeProduct->get_height() : $defaultHeight;
 			
 			$productSKUs[] = apply_filters('globkurier_product_sku', $product->get_sku() ?? '', $product);
 			$productEANs[] = apply_filters('globkurier_product_ean', $product->get_global_unique_id() ?? '', $product);
@@ -133,10 +138,10 @@ foreach ($orders as $order) {
 		$pointType = $extraPickupCarrierId;
 		$pointCode = $extraPickupCarrierValue;
 		$pointName = $extraPickupCarrierId;
-		$pointText = ucfirst(__($extraPickupCarrierId, 'globkurier')).': '.$extraPickupCarrierValue;
+		$pointText = ucfirst((string) $extraPickupCarrierId).': '.$extraPickupCarrierValue;
 		
 		?>
-		<input type="hidden" id="globkurier_extraPickupCarrierId" value="<?= $extraPickupCarrierId ?>">
+		<input type="hidden" id="globkurier_extraPickupCarrierId" value="<?php echo esc_attr($extraPickupCarrierId) ?>">
 		<?php
 	}
 	
@@ -233,62 +238,62 @@ foreach ($products as $product) {
 }
 ?>
 
-<input type='hidden' name="gk_orders_count" value="<?= count($orders) ?>">
-<input type="hidden" id="gk-wc-order-ids" value="<?= json_encode( wp_list_pluck($orders, 'id')) ?>">
+<input type='hidden' name="gk_orders_count" value="<?php echo (int) count($orders) ?>">
+<input type="hidden" id="gk-wc-order-ids" value="<?php echo esc_attr(json_encode(array_map(function ($order){ return $order->get_id(); }, $orders))) ?>">
 
 <div>
 <input type='hidden' id='globkurier_create_order_nonce' value="<?php
-echo wp_create_nonce('globkurier_create_order_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_create_order_nonce')); ?>">
 <input type='hidden' id='globkurier_get_products_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_products_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_products_nonce')); ?>">
 <input type='hidden' id='globkurier_get_product_addons_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_product_addons_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_product_addons_nonce')); ?>">
 <input type='hidden' id='globkurier_get_custom_required_fields_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_custom_required_fields_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_custom_required_fields_nonce')); ?>">
 <input type='hidden' id='globkurier_get_first_pickup_day_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_first_pickup_day_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_first_pickup_day_nonce')); ?>">
 <input type='hidden' id='globkurier_get_product_addon_fields_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_product_addon_fields_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_product_addon_fields_nonce')); ?>">
 <input type='hidden' id='globkurier_get_pickup_time_ranges_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_pickup_time_ranges_nonce'); ?>">
-<input type='hidden' id='globkurier_get_price_nonce' value="<?= wp_create_nonce('globkurier_get_price_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_pickup_time_ranges_nonce')); ?>">
+<input type='hidden' id='globkurier_get_price_nonce' value="<?php echo esc_attr(wp_create_nonce('globkurier_get_price_nonce')); ?>">
 <input type='hidden' id='globkurier_get_payments_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_payments_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_payments_nonce')); ?>">
 <input type='hidden' id='globkurier_order_nonce' value="<?php
-echo wp_create_nonce('globkurier_order_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_order_nonce')); ?>">
 <input type='hidden' id='globkurier_get_current_status_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_current_status_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_current_status_nonce')); ?>">
 <input type='hidden' id='globkurier_save_inpost_points_session_nonce' value="<?php
-echo wp_create_nonce('globkurier_save_inpost_points_session_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_save_inpost_points_session_nonce')); ?>">
 <input type='hidden' id='globkurier_save_ruch_points_session_nonce' value="<?php
-echo wp_create_nonce('globkurier_save_ruch_points_session_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_save_ruch_points_session_nonce')); ?>">
 <input type='hidden' id='globkurier_get_inpost_points_select2_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_inpost_points_select2_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_inpost_points_select2_nonce')); ?>">
 <input type='hidden' id='globkurier_get_ruch_points_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_ruch_points_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_ruch_points_nonce')); ?>">
 <input type='hidden' id='globkurier_get_person_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_person_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_person_nonce')); ?>">
 <input type='hidden' id='globkurier_get_inpost_points_select2_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_inpost_points_select2_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_inpost_points_select2_nonce')); ?>">
 <input type='hidden' id='globkurier_get_ruch_points_select2_nonce' value="<?php
-echo wp_create_nonce('globkurier_get_ruch_points_select2_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_get_ruch_points_select2_nonce')); ?>">
 <input type='hidden' id='globkurier_add_person_to_address_book_nonce' value="<?php
-echo wp_create_nonce('globkurier_add_person_to_address_book_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_add_person_to_address_book_nonce')); ?>">
 <input type='hidden' id='globkurier_update_person_to_address_book_nonce' value="<?php
-echo wp_create_nonce('globkurier_update_person_to_address_book_nonce'); ?>">
+echo esc_attr(wp_create_nonce('globkurier_update_person_to_address_book_nonce')); ?>">
 
-<input type='hidden' id='globkurier-sender-name' value="<?= $defaultSenderData[ 'flnames' ] ?? '' ?>">
-<input type='hidden' id='globkurier-sender-country' value="<?= $defaultSenderData[ 'country' ] ?? 1 ?>">
-<input type='hidden' id='globkurier-sender-postal' value="<?= $defaultSenderData[ 'postal' ] ?? '' ?>">
-<input type='hidden' id='globkurier-sender-city' value="<?= $defaultSenderData[ 'city' ] ?? '' ?>">
-<input type='hidden' id='globkurier-sender-street' value="<?= $defaultSenderData[ 'street' ] ?? '' ?>">
-<input type='hidden' id='globkurier-sender-home' value="<?= $defaultSenderData[ 'homeNumber' ] ?? '' ?>">
-<input type='hidden' id='globkurier-sender-flat' value="<?= $defaultSenderData[ 'flatNumber' ] ?? '' ?>">
-<input type='hidden' id='globkurier-sender-contact-phone' value="<?= $defaultSenderData[ 'phone' ] ?? '' ?>">
-<input type='hidden' id='globkurier-sender-email' value="<?= $defaultSenderData[ 'email' ] ?? '' ?>">
+<input type='hidden' id='globkurier-sender-name' value="<?php echo esc_attr($defaultSenderData[ 'flnames' ] ?? '') ?>">
+<input type='hidden' id='globkurier-sender-country' value="<?php echo esc_attr($defaultSenderData[ 'country' ] ?? 1) ?>">
+<input type='hidden' id='globkurier-sender-postal' value="<?php echo esc_attr($defaultSenderData[ 'postal' ] ?? '') ?>">
+<input type='hidden' id='globkurier-sender-city' value="<?php echo esc_attr($defaultSenderData[ 'city' ] ?? '') ?>">
+<input type='hidden' id='globkurier-sender-street' value="<?php echo esc_attr($defaultSenderData[ 'street' ] ?? '') ?>">
+<input type='hidden' id='globkurier-sender-home' value="<?php echo esc_attr($defaultSenderData[ 'homeNumber' ] ?? '') ?>">
+<input type='hidden' id='globkurier-sender-flat' value="<?php echo esc_attr($defaultSenderData[ 'flatNumber' ] ?? '') ?>">
+<input type='hidden' id='globkurier-sender-contact-phone' value="<?php echo esc_attr($defaultSenderData[ 'phone' ] ?? '') ?>">
+<input type='hidden' id='globkurier-sender-email' value="<?php echo esc_attr($defaultSenderData[ 'email' ] ?? '') ?>">
 
-<input type='hidden' id='globkurier-content' value="<?= $defaultParcelData[ 'content' ] ?? '' ?>">
-<input type='hidden' id='globkurier-otherContent' value="<?= $defaultParcelData[ 'otherContent' ] ?? '' ?>">
+<input type='hidden' id='globkurier-content' value="<?php echo esc_attr($defaultParcelData[ 'content' ] ?? '') ?>">
+<input type='hidden' id='globkurier-otherContent' value="<?php echo esc_attr($defaultParcelData[ 'otherContent' ] ?? '') ?>">
 
 <?php
 foreach ($orders as $i => $order) {
@@ -317,22 +322,22 @@ foreach ($orders as $i => $order) {
 	$orderID = $order->get_id();
 	?>
 
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-name[<?= $orderID ?>]' value="<?= $receiverData[ 'name' ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-country[<?= $orderID ?>]'
-	       value="<?= $globKurier->countries()->getCountryIdByCode($receiverData[ 'country' ] ?? 'PL') ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-postal[<?= $orderID ?>]' value="<?= $receiverData[ 'postal' ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-city[<?= $orderID ?>]' value="<?= $receiverData[ 'city' ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-street[<?= $orderID ?>]' value="<?= $receiverData[ 'street' ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-home[<?= $orderID ?>]' value="<?= $receiverData[ 'home' ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-flat[<?= $orderID ?>]' value="<?= $receiverData[ 'flat' ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-contact-phone[<?= $orderID ?>]' value="<?= $receiverData[ 'phone' ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-receiver-email[<?= $orderID ?>]' value="<?= $receiverData[ 'email' ] ?? '' ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-name[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($receiverData[ 'name' ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-country[<?php echo esc_attr($orderID) ?>]'
+	       value="<?php echo esc_attr($globKurier->countries()->getCountryIdByCode($receiverData[ 'country' ] ?? 'PL')) ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-postal[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($receiverData[ 'postal' ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-city[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($receiverData[ 'city' ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-street[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($receiverData[ 'street' ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-home[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($receiverData[ 'home' ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-flat[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($receiverData[ 'flat' ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-contact-phone[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($receiverData[ 'phone' ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-receiver-email[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($receiverData[ 'email' ] ?? '') ?>">
 
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-height[<?= $orderID ?>]' value="<?= $heights[ $orderID ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-width[<?= $orderID ?>]' value="<?= $widths[ $orderID ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-length[<?= $orderID ?>]' value="<?= $lengths[ $orderID ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-weight[<?= $orderID ?>]' value="<?= $weights[ $orderID ] ?? '' ?>">
-	<input type='hidden' data-order-no="<?= $i ?>" data-order-id="<?= $orderID ?>" name='globkurier-quantity[<?= $orderID ?>]' value="<?= $quantities[ $orderID ] ?? '' ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-height[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($heights[ $orderID ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-width[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($widths[ $orderID ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-length[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($lengths[ $orderID ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-weight[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($weights[ $orderID ] ?? '') ?>">
+	<input type='hidden' data-order-no="<?php echo esc_attr($i) ?>" data-order-id="<?php echo esc_attr($orderID) ?>" name='globkurier-quantity[<?php echo esc_attr($orderID) ?>]' value="<?php echo esc_attr($quantities[ $orderID ] ?? '') ?>">
 	
 	<?php
 }
@@ -340,7 +345,7 @@ foreach ($orders as $i => $order) {
 </div>
 
 <div class="bulk-order-header">
-	<h3><?= __('Wybrane zamówienia', 'globkurier') ?>:</h3> <span><?= implode(', ', $ordersWithLinks) ?></span>
+	<h3><?php echo esc_html__('Wybrane zamówienia', 'globkurier') ?>:</h3> <span><?php echo wp_kses(implode(', ', $ordersWithLinks), ['a' => ['href' => [], 'target' => []]]) ?></span>
 </div>
 
 
@@ -348,7 +353,7 @@ foreach ($orders as $i => $order) {
 	<div class='globkurier-notices-error' style='background-color: #aa00009c; padding: 10px; color: #fdf2f2; display: none'>
 		<div class='globkurier-notices-error-header'>
 			<span class='dashicons dashicons-warning'></span>
-			<?= esc_attr(__('Podczas wysyłania zamówienia wystąpił błąd', 'globkurier')) ?>:
+			<?php echo esc_attr(__('Podczas wysyłania zamówienia wystąpił błąd', 'globkurier')) ?>:
 			<hr>
 		</div>
 		<div class="globkurier-notices-error-body" style="padding: 0 15px;"></div>
@@ -356,7 +361,7 @@ foreach ($orders as $i => $order) {
 	<div class="globkurier-notices-success" style="background-color: rgba(49,128,41,0.61); padding: 10px; color: #fdf2f2; display: none">
 		<div class="globkurier-notices-success-header">
 			<span class="dashicons dashicons-yes-alt"></span>
-			<?= esc_attr(__('Zamówienie zostało przyjęte.', 'globkurier')) ?>:
+			<?php echo esc_attr(__('Zamówienie zostało przyjęte.', 'globkurier')) ?>:
 			<hr>
 		</div>
 		<div class="globkurier-notices-success-body" style="padding: 0 15px;"></div>
@@ -365,7 +370,7 @@ foreach ($orders as $i => $order) {
 	<div class="globkurier-address-books-error" style="background-color: #aa00009c; padding: 10px; color: #fdf2f2; display: none">
 		<div class="globkurier-notices-success-header">
 			<span class="dashicons dashicons-warning"></span>
-			<?= esc_attr(__('Podczas dodawania do książki adresowej wystąpił błąd', 'globkurier')) ?>:
+			<?php echo esc_attr(__('Podczas dodawania do książki adresowej wystąpił błąd', 'globkurier')) ?>:
 			<hr>
 		</div>
 		<div class="globkurier-address-books-error-body" style="padding: 0 15px;"></div>
@@ -374,7 +379,7 @@ foreach ($orders as $i => $order) {
 	<div class="globkurier-address-books-success" style="background-color: rgba(49,128,41,0.61); padding: 10px; color: #fdf2f2; display: none">
 		<div class="globkurier-notices-success-header">
 			<span class="dashicons dashicons-yes-alt"></span>
-			<?= esc_attr(__('Pomyślnie dodano do książki adresowej', 'globkurier')) ?>:
+			<?php echo esc_attr(__('Pomyślnie dodano do książki adresowej', 'globkurier')) ?>:
 			<hr>
 		</div>
 		<div class="globkurier-address-books-success-body" style="padding: 0 15px;"></div>
@@ -383,7 +388,7 @@ foreach ($orders as $i => $order) {
 
 
 <div id="gk-bulk-step-1">
-	<h3><?= __('Metody wysyłki pasujące do wszystkich wybranych zamówień', 'globkurier') ?>:</h3>
+	<h3><?php echo esc_html__('Metody wysyłki pasujące do wszystkich wybranych zamówień', 'globkurier') ?>:</h3>
 	<div class="udi-all-products">
 		<?php
 		foreach ($commonProducts as $productId => $product): ?>
@@ -414,22 +419,22 @@ foreach ($orders as $i => $order) {
 			?>
 
 			<div class="udi-product">
-				<div><img src="<?= esc_attr($product[ 'carrierLogoLink' ] ?? '') ?>"></div>
-				<div><span><?= esc_html($product[ 'name' ] ?? '') ?> <?= esc_html($nameSuffix) ?></span></div>
-				<?= $collectionTypesText ?>
+				<div><img src="<?php echo esc_attr($product[ 'carrierLogoLink' ] ?? '') ?>"></div>
+				<div><span><?php echo esc_html($product[ 'name' ] ?? '') ?> <?php echo esc_html($nameSuffix) ?></span></div>
+				<?php echo wp_kses_post($collectionTypesText) ?>
 				<div style="margin: 20px 0">
-					<span class="udi-product-price"><?= $netPrice ?>zł</span><br/>
-					(<?= $grossPrice ?>zł brutto)
+					<span class="udi-product-price"><?php echo esc_html($netPrice) ?>zł</span><br/>
+					(<?php echo esc_html($grossPrice) ?>zł brutto)
 				</div>
 				<div style="margin: 10px 0">
 					<button type="button"
 					        class="button-secondary udi-select-carrier-bulk"
-					        data-labels="<?= esc_attr(implode(',', $labels)) ?>"
-					        data-carriername="<?= esc_attr($product[ 'carrierName' ] ?? '') ?>"
-					        data-collectiontypes="<?= esc_attr(implode(',', $product[ 'collectionTypes' ] ?? [])) ?>"
-					        data-deliverytypes="<?= esc_attr(implode(',', array_column($product[ 'deliveryTypeOptions' ] ?? [], 'key'))) ?>"
-					        data-carrierid="<?= esc_attr($productId) ?>">
-						<?= __('Wybieram', 'globkurier') ?>
+					        data-labels="<?php echo esc_attr(implode(',', $labels)) ?>"
+					        data-carriername="<?php echo esc_attr($product[ 'carrierName' ] ?? '') ?>"
+					        data-collectiontypes="<?php echo esc_attr(implode(',', $product[ 'collectionTypes' ] ?? [])) ?>"
+					        data-deliverytypes="<?php echo esc_attr(implode(',', array_column($product[ 'deliveryTypeOptions' ] ?? [], 'key'))) ?>"
+					        data-carrierid="<?php echo esc_attr($productId) ?>">
+						<?php echo esc_html__('Wybieram', 'globkurier') ?>
 					</button>
 				</div>
 			</div>
@@ -490,28 +495,28 @@ foreach ($orders as $i => $order) {
 
 					<div class="udi-product-extras-category" id="udi-extra-category-receiver">
 						<div class="udi-product-extras-category-header">
-							<?= esc_attr(__('Odbiorca', 'globkurier')) ?>
+							<?php echo esc_attr(__('Odbiorca', 'globkurier')) ?>
 						</div>
 						<div class="udi-product-extras-cat-items"></div>
 					</div>
 
 					<div class="udi-product-extras-category" id="udi-extra-category-cod">
 						<div class="udi-product-extras-category-header">
-							<?= esc_attr(__('Pobranie COD', 'globkurier')) ?>
+							<?php echo esc_attr(__('Pobranie COD', 'globkurier')) ?>
 						</div>
 						<div class="udi-product-extras-cat-items"></div>
 					</div>
 
 					<div class="udi-product-extras-category" id="udi-extra-category-insurance">
 						<div class="udi-product-extras-category-header">
-							<?= esc_attr(__('Ubezpieczenie', 'globkurier')) ?>
+							<?php echo esc_attr(__('Ubezpieczenie', 'globkurier')) ?>
 						</div>
 						<div class="udi-product-extras-cat-items"></div>
 					</div>
 
 					<div class="udi-product-extras-category" id="udi-extra-category-other">
 						<div class="udi-product-extras-category-header">
-							<?= esc_attr(__('Inne', 'globkurier')) ?>
+							<?php echo esc_attr(__('Inne', 'globkurier')) ?>
 						</div>
 						<div class="udi-product-extras-cat-items"></div>
 					</div>
@@ -522,38 +527,38 @@ foreach ($orders as $i => $order) {
 
 		<div class="udi-step-select-product-details-right">
 			<div class="udi-service-options">
-				<div class="udi-service-options-header"><?= esc_attr(__('Opcje nadania', 'globkurier')) ?>:
+				<div class="udi-service-options-header"><?php echo esc_attr(__('Opcje nadania', 'globkurier')) ?>:
 				</div>
 				<div class="udi-service-options-body">
 
 					<div style="display: contents">
 						<div class=udi-options-body-row" style="display: contents;">
-							<label class="udi-options-body-label" for=""><?= esc_attr(__('Nadanie przesyłki', 'globkurier')) ?>:</label>
+							<label class="udi-options-body-label" for=""><?php echo esc_attr(__('Nadanie przesyłki', 'globkurier')) ?>:</label>
 							<div class="" style="margin-left: 10px;">
 								<input type="radio" id="globkurier-pickup-type-PICKUP" data-pickuptype="PICKUP" name="globkurier-pickup-type" value="PICKUP">
-								<label for="globkurier-pickup-type-PICKUP"><?= esc_attr(__('Przesyłkę odbierze kurier', 'globkurier')) ?></label><br>
+								<label for="globkurier-pickup-type-PICKUP"><?php echo esc_attr(__('Przesyłkę odbierze kurier', 'globkurier')) ?></label><br>
 								<input type="radio" id="globkurier-pickup-type-POINT" data-pickuptype="POINT" name="globkurier-pickup-type" value="POINT">
-								<label for="globkurier-pickup-type-POINT"><?= esc_attr(__('Nadam przesyłkę w terminalu', 'globkurier')) ?></label><br>
+								<label for="globkurier-pickup-type-POINT"><?php echo esc_attr(__('Nadam przesyłkę w terminalu', 'globkurier')) ?></label><br>
 							</div>
 						</div>
 
 						<div class="globkurier-not-pickup udi-options-body-row" style="display: contents;">
-							<label class="udi-options-body-label" for="globkurier-service-date-picker"><?= esc_attr(__('Data nadania', 'globkurier')) ?>:</label>
+							<label class="udi-options-body-label" for="globkurier-service-date-picker"><?php echo esc_attr(__('Data nadania', 'globkurier')) ?>:</label>
 							<div class="udi-input-with-notice">
 								<input type="text" style="flex-basis: 100%; background-color: inherit !important;" id="globkurier-service-date-picker" readonly>
-								<small><?= esc_attr(__('W jakim dniu kurier ma przyjechać po paczkę?', 'globkurier')) ?></small>
+								<small><?php echo esc_attr(__('W jakim dniu kurier ma przyjechać po paczkę?', 'globkurier')) ?></small>
 							</div>
 						</div>
 
 						<div class="globkurier-not-pickup" style="display: contents;">
-							<label for="globkurier-service-time-picker" class="udi-options-body-label"><?= esc_attr(__('Godzina nadania', 'globkurier')) ?>:</label>
+							<label for="globkurier-service-time-picker" class="udi-options-body-label"><?php echo esc_attr(__('Godzina nadania', 'globkurier')) ?>:</label>
 							<div class="udi-input-with-notice">
 								<select name="globkurier-service-time-picker" id="globkurier-service-time-picker"></select>
 							</div>
 						</div>
 
 						<div class="globkurier-only-inpost">
-							<label for="globkurier_inpost_input" class="udi-options-body-label"><?= esc_attr(__('InPost punkt nadania', 'globkurier')) ?>:</label>
+							<label for="globkurier_inpost_input" class="udi-options-body-label"><?php echo esc_attr(__('InPost punkt nadania', 'globkurier')) ?>:</label>
 
 							<div class="udi-input-with-notice">
 								<select type="text" style="width: 100%" class=" udi-select2" id="udi-select-inpost-sender" name="globkurier_inpost_input_sender_value">
@@ -563,7 +568,7 @@ foreach ($orders as $i => $order) {
 									}
 									?>
 								</select>
-								<input type="hidden" name="globkurier_inpost_input" id="globkurier_inpost_input" value="<?= esc_attr($defaultInpostId ?? '') ?>">
+								<input type="hidden" name="globkurier_inpost_input" id="globkurier_inpost_input" value="<?php echo esc_attr($defaultInpostId ?? '') ?>">
 							</div>
 						</div>
 					</div>
@@ -576,15 +581,25 @@ foreach ($orders as $i => $order) {
 					<div id="globkurier-service-extra-fields-SENDER_WAYBILL_ADDRESS" style="display: contents;"></div>
 
 					<div style="display: contents;">
-						<label for="globkurier-service-payment-picker" class="udi-options-body-label""><?= esc_attr(__('Płatność', 'globkurier')) ?>:</label>
+						<label for="globkurier-service-payment-picker" class="udi-options-body-label""><?php echo esc_attr(__('Płatność', 'globkurier')) ?>:</label>
 						<div class="udi-input-with-notice">
 							<select style="width: 100%" name="globkurier-service-payment-picker" id="globkurier-service-payment-picker"></select>
 						</div>
 					</div>
 
 					<div style="display: contents;">
+						<label for="globkurier-contains-dangerous-goods" class="udi-options-body-label"><?php echo esc_attr(__('Towary niebezpieczne', 'globkurier')) ?>:</label>
+						<div class="udi-input-with-notice">
+							<label>
+								<input type="checkbox" name="globkurier-contains-dangerous-goods" id="globkurier-contains-dangerous-goods" value="1">
+								<?php echo esc_attr(__('Przesyłki zawierają towary niebezpieczne', 'globkurier')) ?>
+							</label>
+						</div>
+					</div>
+
+					<div style="display: contents;">
 						<button style="width: max-content; justify-self: flex-end; grid-column-start: 2;" type="button" class="button button-primary udi-save-order">
-							<?= esc_attr(__('Potwierdzam i składam zamówienie', 'globkurier')) ?>
+							<?php echo esc_attr(__('Potwierdzam i składam zamówienie', 'globkurier')) ?>
 						</button>
 					</div>
 
@@ -600,23 +615,23 @@ foreach ($orders as $i => $order) {
 	<div class='udi-order-confirm-container'>
 
 		<div class="udi-order-confirm-container-body">
-		<h1><?= esc_attr(__('Podsumowanie zamówień', 'globkurier')) ?></h1>
+		<h1><?php echo esc_attr(__('Podsumowanie zamówień', 'globkurier')) ?></h1>
 		
-		<p><?= esc_attr(__('Prosimy o wydruk listu przewozowego, który zostanie wysłany na adres e-mail Zleceniodawcy i Nadawcy. Numer listu umożliwi monitorowanie losów Twojej przesyłki. Przekazując kurierowi wydrukowany list przewozowy nie poniesiesz dodatkowych kosztów.',
+		<p><?php echo esc_attr(__('Prosimy o wydruk listu przewozowego, który zostanie wysłany na adres e-mail Zleceniodawcy i Nadawcy. Numer listu umożliwi monitorowanie losów Twojej przesyłki. Przekazując kurierowi wydrukowany list przewozowy nie poniesiesz dodatkowych kosztów.',
 				'globkurier')) ?></p>
 	
-		<p class="udi-info-p"><?= esc_attr(__('Przed zatwierdzeniem prosimy dokładnie zweryfikować dane.', 'globkurier')) ?></p>
+		<p class="udi-info-p"><?php echo esc_attr(__('Przed zatwierdzeniem prosimy dokładnie zweryfikować dane.', 'globkurier')) ?></p>
 		
 		<?php
 		  foreach ($orders as $i => $order) {
 		?>
 			<div style="margin-top: 40px">
-				<h2>Zamówienie #<?= $order->get_id() ?></h2>
+				<h2>Zamówienie #<?php echo (int) $order->get_id() ?></h2>
 				
 				<div class="udi-order-confirm-address">
 					<div class="udi-wpadmin-order-address-col">
 						<div class="udi-product-extras-header">
-							<?= esc_attr(__('NADAWCA', 'globkurier')) ?>:
+							<?php echo esc_attr(__('NADAWCA', 'globkurier')) ?>:
 						</div>
 						<div>
 							<div>
@@ -635,7 +650,7 @@ foreach ($orders as $i => $order) {
 								<span class="udi-confirm-address-sender-flnames"></span>
 							</div>
 							<div>
-								<?= esc_attr(__('tel.', 'globkurier')) ?>
+								<?php echo esc_attr(__('tel.', 'globkurier')) ?>
 								<span class="udi-confirm-address-sender-phone"></span>
 							</div>
 							<div>
@@ -647,31 +662,31 @@ foreach ($orders as $i => $order) {
 						<?php
 						do_action('globkurier_before_sender_data', $order ?? '', $defaultSenderData, $receiverData) ?>
 						<div class="udi-product-extras-header">
-							<?= esc_attr(__('ODBIORCA', 'globkurier')) ?>:
+							<?php echo esc_attr(__('ODBIORCA', 'globkurier')) ?>:
 						</div>
 		
 						<div>
 							<div>
-								<span data-order-no="<?= $i ?>" data-target="udi-confirm-address-receiver-name[<?= $i ?>]"></span>
+								<span data-order-no="<?php echo esc_attr($i) ?>" data-target="udi-confirm-address-receiver-name[<?php echo esc_attr($i) ?>]"></span>
 							</div>
 							<div>
-								<span data-order-no="<?= $i ?>" data-target="udi-confirm-address-receiver-street[<?= $i ?>]"></span>
-								<span data-order-no="<?= $i ?>" data-target="udi-confirm-address-receiver-homeNumber[<?= $i ?>]"></span>
-								<span data-order-no="<?= $i ?>" data-target="udi-confirm-address-receiver-flatNumber[<?= $i ?>]"></span>
+								<span data-order-no="<?php echo esc_attr($i) ?>" data-target="udi-confirm-address-receiver-street[<?php echo esc_attr($i) ?>]"></span>
+								<span data-order-no="<?php echo esc_attr($i) ?>" data-target="udi-confirm-address-receiver-homeNumber[<?php echo esc_attr($i) ?>]"></span>
+								<span data-order-no="<?php echo esc_attr($i) ?>" data-target="udi-confirm-address-receiver-flatNumber[<?php echo esc_attr($i) ?>]"></span>
 							</div>
 							<div>
-								<span data-order-no="<?= $i ?>" data-target="udi-confirm-address-receiver-city[<?= $i ?>]"></span>
-								<span data-order-no="<?= $i ?>" data-target="udi-confirm-address-receiver-postal[<?= $i ?>]"></span>
+								<span data-order-no="<?php echo esc_attr($i) ?>" data-target="udi-confirm-address-receiver-city[<?php echo esc_attr($i) ?>]"></span>
+								<span data-order-no="<?php echo esc_attr($i) ?>" data-target="udi-confirm-address-receiver-postal[<?php echo esc_attr($i) ?>]"></span>
 							</div>
 							<div>
-								<span data-target="udi-confirm-address-receiver-flnames[<?= $i ?>]"></span>
+								<span data-target="udi-confirm-address-receiver-flnames[<?php echo esc_attr($i) ?>]"></span>
 							</div>
 							<div>
-								<?= esc_attr(__('tel.', 'globkurier')) ?>
-								<span data-order-no="<?= $i ?>"  data-target="udi-confirm-address-receiver-phone[<?= $i ?>]"></span>
+								<?php echo esc_attr(__('tel.', 'globkurier')) ?>
+								<span data-order-no="<?php echo esc_attr($i) ?>"  data-target="udi-confirm-address-receiver-phone[<?php echo esc_attr($i) ?>]"></span>
 							</div>
 							<div>
-								<span data-order-no="<?= $i ?>"  data-target="udi-confirm-address-receiver-email[<?= $i ?>]"></span>
+								<span data-order-no="<?php echo esc_attr($i) ?>"  data-target="udi-confirm-address-receiver-email[<?php echo esc_attr($i) ?>]"></span>
 							</div>
 						</div>
 					</div>
@@ -680,7 +695,7 @@ foreach ($orders as $i => $order) {
 				<div class="udi-order-confirm-product">
 					<div class="udi-wpadmin-order-address-col">
 						<div class="udi-product-extras-header">
-							<?= esc_attr(__('PRODUKT', 'globkurier')) ?>:
+							<?php echo esc_attr(__('PRODUKT', 'globkurier')) ?>:
 						</div>
 						<div>
 							<div>
@@ -689,26 +704,26 @@ foreach ($orders as $i => $order) {
 							</div>
 							
 							<div class="udi-confirm-product-count">
-								<?= esc_attr(__('Liczba paczek', 'globkurier')) ?>:
+								<?php echo esc_attr(__('Liczba paczek', 'globkurier')) ?>:
 								<span class="udi-confirm-value"></span>
 							</div>
 							
 							<div class="udi-confirm-product-terminal">
-								<?= esc_attr(__('Nadanie przesyłki w terminalu.', 'globkurier')) ?>
+								<?php echo esc_attr(__('Nadanie przesyłki w terminalu.', 'globkurier')) ?>
 							</div>
 							
 							<div class="udi-confirm-product-date">
-								<?= esc_attr(__('Nadanie w dniu', 'globkurier')) ?>:
+								<?php echo esc_attr(__('Nadanie w dniu', 'globkurier')) ?>:
 								<span class="udi-confirm-value"></span>
 							</div>
 							
 							<div class="udi-confirm-product-time">
-								<?= esc_attr(__('Nadanie w godzinach', 'globkurier')) ?>:
+								<?php echo esc_attr(__('Nadanie w godzinach', 'globkurier')) ?>:
 								<span class="udi-confirm-value"></span>
 							</div>
 							
 							<div class="udi-confirm-product-content">
-								<?= esc_attr(__('Zawartość przesyłki', 'globkurier')) ?>:
+								<?php echo esc_attr(__('Zawartość przesyłki', 'globkurier')) ?>:
 								<span class="udi-confirm-value"></span>
 							</div>
 						</div>
@@ -718,7 +733,7 @@ foreach ($orders as $i => $order) {
 						<?php
 						do_action('globkurier_before_sender_data', $order ?? '', $defaultSenderData, $receiverData) ?>
 						<div class="udi-product-extras-header">
-							<?= esc_attr(__('DODATKI', 'globkurier')) ?>:
+							<?php echo esc_attr(__('DODATKI', 'globkurier')) ?>:
 						</div>
 		
 						<div class="udi-confirm-extras"></div>
@@ -729,12 +744,12 @@ foreach ($orders as $i => $order) {
 		
 					<div class="udi-wpadmin-order-address-col">
 						<div class="udi-product-extras-header">
-							<?= esc_attr(__('PŁATNOŚĆ', 'globkurier')) ?>:
+							<?php echo esc_attr(__('PŁATNOŚĆ', 'globkurier')) ?>:
 						</div>
 		
 						<div>
 							<div>
-								<?= esc_attr(__('Forma płatności', 'globkurier')) ?>:
+								<?php echo esc_attr(__('Forma płatności', 'globkurier')) ?>:
 								<span class="udi-confirm-payment-method"></span>
 							</div>
 						</div>
@@ -742,7 +757,7 @@ foreach ($orders as $i => $order) {
 					<div class="udi-wpadmin-order-address-col">
 						<?php do_action('globkurier_before_sender_data', $order ?? '', $defaultSenderData, $receiverData) ?>
 						<div class="udi-product-extras-header">
-							<?= esc_attr(__('ŁĄCZNIE DO ZAPŁATY', 'globkurier')) ?>:
+							<?php echo esc_attr(__('ŁĄCZNIE DO ZAPŁATY', 'globkurier')) ?>:
 						</div>
 						<div>
 							<h1 class="udi-confirm-payment-total-price"></h1>
@@ -755,8 +770,8 @@ foreach ($orders as $i => $order) {
 		?>
 		</div>
 		<div class="udi-order-confirm-container-buttons">
-			<button type="button" class="button-secondary globkurier_confirm_correction"><?= esc_attr(__('Popraw dane', 'globkurier')) ?></button>
-			<button type="button" class="button-primary globkurier_confirm_send"><?= esc_attr(__('Zatwierdź i zapłać', 'globkurier')) ?></button>
+			<button type="button" class="button-secondary globkurier_confirm_correction"><?php echo esc_attr(__('Popraw dane', 'globkurier')) ?></button>
+			<button type="button" class="button-primary globkurier_confirm_send"><?php echo esc_attr(__('Zatwierdź i zapłać', 'globkurier')) ?></button>
 		</div>
 	</div>
 

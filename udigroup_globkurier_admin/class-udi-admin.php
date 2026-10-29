@@ -14,10 +14,47 @@ class UDIGroup_Admin
 		$this->version     = $version;
 	}
 	
+	/**
+	 * Ekrany, na ktorych wtyczka czegos uzywa: zamowienia (lista i edycja, HPOS i klasyczne),
+	 * ustawienia WooCommerce oraz wlasne strony GlobKuriera.
+	 */
+	private function isPluginScreen(): bool
+	{
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- parametr adresu ekranu panelu (wybor assetow/szablonu z listy dozwolonych), bez zmiany stanu.
+		$page = sanitize_text_field(wp_unslash($_GET['page'] ?? ''));
+		
+		if (strpos($page, 'globkurier') === 0 || in_array($page, ['wc-settings', 'wc-orders'], true)) {
+			return true;
+		}
+		
+		$screen = function_exists('get_current_screen') ? get_current_screen() : null;
+		
+		if (! $screen) {
+			return false;
+		}
+		
+		if ($screen->post_type === 'shop_order') {
+			return true;
+		}
+		
+		if (in_array($screen->id, ['shop_order', 'edit-shop_order', 'woocommerce_page_wc-orders', 'woocommerce_page_wc-settings'], true)) {
+			return true;
+		}
+		
+		return strpos($screen->id, 'globkurier') !== false;
+	}
+	
 	public function enqueue_styles()
 	{
+		// Na pozostalych ekranach tylko lekki CSS - zawiera m.in. styl ikony w menu admina.
+		if (! $this->isPluginScreen()) {
+			wp_enqueue_style($this->plugin_name, UDIGroup_Helper::getAdminUrl('css/udi-admin.css'), [], $this->version, 'all');
+
+			return;
+		}
+
 		wp_enqueue_style('woocommerce_admin_styles', WC()->plugin_url().'/assets/css/admin.css', [], $this->version);
-		
+
 		wp_enqueue_style($this->plugin_name.'_datatables', UDIGroup_Helper::getAdminUrl('css/datatables/datatables.min.css'), [], $this->version, 'all');
 		wp_enqueue_style($this->plugin_name, UDIGroup_Helper::getAdminUrl('css/udi-admin.css'), [], $this->version, 'all');
 		wp_enqueue_style($this->plugin_name.'_select2', UDIGroup_Helper::getAdminUrl('css/select2/select2.min.css'), [], $this->version, 'all');
@@ -25,6 +62,10 @@ class UDIGroup_Admin
 	
 	public function enqueue_scripts()
 	{
+		if (! $this->isPluginScreen()) {
+			return;
+		}
+		
 		wp_enqueue_script('jquery-ui-dialog');
 		wp_enqueue_script('jquery-ui-datepicker');
 		
@@ -49,6 +90,8 @@ class UDIGroup_Admin
 			'globkurier_get_ruch_points_select2_nonce'       => wp_create_nonce('globkurier_get_ruch_points_select2_nonce'),
 			'globkurier_save_ruch_points_session_nonce'      => wp_create_nonce('globkurier_save_ruch_points_session_nonce'),
 			'globkurier_save_inpost_points_session_nonce'    => wp_create_nonce('globkurier_save_inpost_points_session_nonce'),
+			'globkurier_update_points_nonce'                 => wp_create_nonce('globkurier_update_points_nonce'),
+			'globkurier_get_crossborder_terminals_nonce'     => wp_create_nonce('globkurier_get_crossborder_terminals_nonce'),
 		];
 		
 		wp_enqueue_script($this->plugin_name.'_datatables', UDIGroup_Helper::getAdminUrl('js/datatables/datatables.min.js'), ['jquery'], $this->version, false);
@@ -57,29 +100,27 @@ class UDIGroup_Admin
 		
 		$is_order_page = false;
 		global $current_screen;
-		
-		if ($current_screen && $current_screen->id === 'woocommerce_page_wc-orders' &&
-			isset($_GET['action']) && $_GET['action'] === 'edit') {
+
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- parametry adresu ekranu panelu tylko do wyboru assetow, bez zmiany stanu.
+		$page    = sanitize_text_field(wp_unslash($_GET['page'] ?? ''));
+		$action  = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
+		$section = sanitize_text_field(wp_unslash($_GET['section'] ?? ''));
+		// phpcs:enable
+
+		if ($current_screen && $current_screen->id === 'woocommerce_page_wc-orders' && $action === 'edit') {
 			$is_order_page = true;
 		}
-		
+
 		if ($current_screen && $current_screen->id === 'shop_order' &&
 			$current_screen->base === 'post') {
 			$is_order_page = true;
 		}
-		
-		if(isset($_GET['page']) && $_GET['page'] == 'globkurier_ship_order'){
+
+		if (in_array($page, ['globkurier_ship_order', 'globkurier_all_orders', 'globkurier_protocols'], true)) {
 			$is_order_page = true;
 		}
-		
-		if(isset($_GET['page']) && $_GET['page'] == 'globkurier_all_orders'){
-			$is_order_page = true;
-		}
-		
-		if(isset($_GET['page']) && $_GET['page'] == 'globkurier_protocols'){
-			$is_order_page = true;
-		}
-		if(isset($_GET['page']) && $_GET['page'] == 'wc-settings' && isset($_GET['section']) && $_GET['section'] == 'globkurier'){
+
+		if ($page === 'wc-settings' && $section === 'globkurier') {
 			$is_order_page = true;
 		}
 		
@@ -107,17 +148,23 @@ class UDIGroup_Admin
 	
 	private function load_admin_page_template()
 	{
-		$allowed = [
-			'globkurier_settings',
-			'globkurier_all_orders',
-			'globkurier_ship_order',
-			'globkurier_protocols',
+		// Strona panelu => staly plik szablonu; sciezka nie jest budowana z danych zadania.
+		$templates = [
+			'globkurier_settings'   => 'partials/udi-admin-globkurier_settings.php',
+			'globkurier_all_orders' => 'partials/udi-admin-globkurier_all_orders.php',
+			'globkurier_ship_order' => 'partials/udi-admin-globkurier_ship_order.php',
+			'globkurier_protocols'  => 'partials/udi-admin-globkurier_protocols.php',
 		];
-		
-		$page = sanitize_text_field($_GET['page'] ?? '');
-		
-		if (in_array($page, $allowed)) {
-			require_once UDIGroup_Helper::getAdminPath("partials/udi-admin-{$page}.php");
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- parametr adresu ekranu panelu (wybor szablonu z listy dozwolonych), bez zmiany stanu.
+		$page = sanitize_text_field(wp_unslash($_GET['page'] ?? ''));
+
+		// Parametr tylko porownujemy - sciezka pochodzi zawsze ze stalej wartosci mapy, nie z indeksu z zadania.
+		foreach ($templates as $slug => $template) {
+			if ($slug === $page) {
+				require_once UDIGroup_Helper::getAdminPath($template);
+				break;
+			}
 		}
 	}
 }

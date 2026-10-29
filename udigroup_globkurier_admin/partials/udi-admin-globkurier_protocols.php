@@ -1,4 +1,5 @@
 <?php
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- szablon dolaczany wewnatrz funkcji (UDIGroup_Admin::load_admin_page_template()), zmienne sa lokalne, nie globalne.
 
 if (!defined('ABSPATH')) exit; // Exit if accessed directly
 
@@ -6,8 +7,13 @@ global $wpdb;
 global $globKurier;
 
 
-if (sanitize_text_field($_GET[ 'getPdfProtocols' ] ?? '')) {
-    $hashes = sanitize_text_field($_GET[ 'hashes' ]) ?? '';
+// Pobranie PDF etykiet/protokolow linkiem GET - nonce w adresie (GlobKurierApi::getOrder*PdfUrl, przyciski zbiorcze).
+if (isset($_GET[ 'getPdfLabels' ]) || isset($_GET[ 'getPdfProtocols' ])) {
+	check_admin_referer(\udigroup_globkurier\GlobKurierApi::PDF_NONCE);
+}
+
+if (sanitize_text_field(wp_unslash($_GET[ 'getPdfProtocols' ] ?? ''))) {
+    $hashes = sanitize_text_field(wp_unslash($_GET[ 'hashes' ] ?? ''));
 
 	$pdf = $globKurier->documents()->getOrderProtocolPdf($hashes);
 	
@@ -22,36 +28,19 @@ if (sanitize_text_field($_GET[ 'getPdfProtocols' ] ?? '')) {
 	header('Content-Transfer-Encoding: binary');
 	header('Accept-Ranges: bytes');
 	
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- binarny PDF z API GK wysylany z naglowkiem Content-Type: application/pdf (gdy odpowiedz nie jest PDF, wyzej esc_attr); escapowanie zepsuloby plik.
 	die($pdf);
 }
 
 
-$mataName = apply_filters('globkurier_wc_order_meta_name', 'globkurier_orders');
-$query = $wpdb->prepare(
-    "SELECT `meta_value`, `post_id` FROM `{$wpdb->postmeta}` WHERE meta_key = %s",
-    $mataName
-);
-$s_orders = $wpdb->get_results($query, ARRAY_A);
-
-$orders = [];
-foreach( $s_orders as $order ){
-	$data = maybe_unserialize( maybe_unserialize( $order[ 'meta_value' ] ) );
-	
-	$data[ 'wcOrderId' ] = $order[ 'post_id' ];
-	
-	$orders[] = $data;
-}
-
-usort( $orders, function( $item1, $item2 ){
-	return $item2[ 'date' ] <=> $item1[ 'date' ];
-} );
+// Tabela laduje strony przez AJAX (globkurierGetProtocolOrders) - wczesniej szablon renderowal wszystkie przesylki naraz.
 
 ?>
 
 <h1><?php echo esc_attr(__( 'Lista protokołów GlobKurier', 'globkurier' )) ?></h1>
 
 <div class="globkurier-old-orders-table-wrapper">
-	<table class="globkurier-old-orders-table stripe udi-is-datatable">
+	<table class="globkurier-old-orders-table stripe udi-is-datatable udi-is-ajax-datatable">
 		<thead>
 		<tr>
 			<th></th>
@@ -69,56 +58,7 @@ usort( $orders, function( $item1, $item2 ){
 			<th style="min-width: 50px"><?php echo esc_attr(__( 'Opcja', 'globkurier' )) ?></th>
 		</tr>
 		</thead>
-		<tbody>
-		<?php
-		
-		foreach( $orders as $order ){
-			$wcOrder = wc_get_order( $order[ 'wcOrderId' ] );
-			?>
-			<tr>
-				<td>
-					<input type="checkbox" class="globkurier-order-bulk-check" value="<?php echo esc_attr($order[ 'hash' ]) ?>" title="<?php echo esc_attr(__( 'Zaznacz', 'globkurier' )) ?>">
-				</td>
-				<td><?php echo esc_attr($order[ 'number' ] ?? '') ?></td>
-				<td><?php echo esc_attr(date( 'd.m.Y H:i', $order[ 'date' ] ) ?? '') ?></td>
-				<td><?php echo esc_attr($order[ 'data' ][ 'receiverAddress' ][ 'name' ] ?? '' )?></td>
-				<td><?php echo esc_attr($order[ 'data' ][ 'content' ] ?? '') ?></td>
-				<td><?php echo esc_attr($order[ 'data' ][ 'shipment' ][ 'weight' ] ?? '') ?></td>
-				<td><?php echo esc_attr($order[ 'carrier' ][ 'name' ] ?? '') ?></td>
-				<td><?php echo esc_attr($order[ 'cod' ][ 'value' ] ?? '-') ?></td>
-				<td><?php echo esc_attr($order[ 'payment_name' ] ?? '') ?></td>
-				<td><?php echo esc_attr($order[ 'price' ][ 'net' ] ?? '') ?>zł</td>
-				<td>
-					<button type="button" data-number="<?php echo esc_attr($order[ 'number' ]) ?>" title="<?php echo esc_attr(__( 'Pobierz status zamówienia', 'globkurier' )) ?>" class="udi-get-current-status"><?php echo esc_attr(__( 'Pobierz', 'globkurier' )) ?></button>
-					<div class="udi-loader"></div>
-					<span class="udi-status-value"></span>
-				</td>
-				<td>
-					<?php
-					
-					if( $wcOrder ){
-						?>
-						<a style="text-decoration: none" href="<?php echo esc_attr($wcOrder->get_edit_order_url()) ?>" target="_blank">#<?php echo esc_attr($wcOrder->get_order_number()) ?></a>
-						<?php
-					} else{
-						echo '-';
-					}
-					
-					?>
-				</td>
-				<td>
-					<a style="text-decoration: none" href="<?php echo  esc_attr($globKurier->api()->getOrderProtocolPdfUrl( $order[ 'hash' ] ?? '' )) ?>" target="_blank" title="<?php echo esc_attr(__( 'Pobierz list przewozowy', 'globkurier' )) ?>">
-						<span class="dashicons dashicons-media-document"></span>
-					</a>
-					<a style="text-decoration: none" href="<?php echo esc_attr($globKurier->api()->getOrderTrackUrl( $order[ 'number' ] )) ?>" target="_blank" title="<?php echo esc_attr(__( 'Śledź przesyłkę', 'globkurier' )) ?>">
-						<span class="dashicons dashicons-search"></span>
-					</a>
-				</td>
-			</tr>
-			<?php
-		}
-		?>
-		</tbody>
+		<tbody></tbody>
 		<tfoot>
 		<tr>
 			<td colspan="13">
@@ -153,10 +93,59 @@ usort( $orders, function( $item1, $item2 ){
 	
 	( function ( $ ) {
 		$( function () {
-			
-			$( '.udi-is-datatable' ).on( 'page.dt', function () {
-				$( '.globkurier-order-bulk-check' ).prop( 'checked', false ).change();
-			} );
+
+			// Wartosci w JSON sa juz escapowane po stronie serwera (GlobKurierDocuments::historyPage()).
+			function checkItem( data, type, full ) {
+				return '<input type="checkbox" class="globkurier-order-bulk-check" value="' + full.hash + '" title="<?php echo esc_attr(__( 'Zaznacz', 'globkurier' )) ?>">';
+			}
+
+			function getStatus( data, type, full ) {
+				return '<button type="button" data-number="' + full.number + '" title="<?php echo esc_attr(__( 'Pobierz status zamówienia', 'globkurier' )) ?>" class="udi-get-current-status"><?php echo esc_attr(__( 'Pobierz', 'globkurier' )) ?></button>'
+					+ '<div class="udi-loader"></div><span class="udi-status-value"></span>';
+			}
+
+			function getOrderLink( data, type, full ) {
+				if ( full.wc_order_link ) {
+					return '<a style="text-decoration: none" href="' + full.wc_order_link + '" target="_blank">#' + ( full.wc_order_number || full.wc_order_id ) + '</a>';
+				}
+
+				return '-';
+			}
+
+			function actionLinks( data, type, full ) {
+				return '<a style="text-decoration: none" href="' + full.order_protocol_url + '" target="_blank" title="<?php echo esc_attr(__( 'Pobierz list przewozowy', 'globkurier' )) ?>"><span class="dashicons dashicons-media-document"></span></a>'
+					+ '<a style="text-decoration: none" href="' + full.order_track_url + '" target="_blank" title="<?php echo esc_attr(__( 'Śledź przesyłkę', 'globkurier' )) ?>"><span class="dashicons dashicons-search"></span></a>';
+			}
+
+			$( '.udi-is-ajax-datatable' )
+				.DataTable( {
+					'language': { 'url': '<?php echo esc_url(UDIGroup_GLOBKURIER_PLUGIN_DIR_URL.'udigroup_globkurier_admin/lang/datatables/pl.json') ?>' },
+					'stateSave': true,
+					'processing': true,
+					'serverSide': true,
+					'ajax': ajaxurl + "?action=globkurierGetProtocolOrders&nonce=<?php echo esc_attr(wp_create_nonce('globkurier_get_protocol_orders_nonce')); ?>",
+					'bSort': false,
+					'columns': [
+						{ 'render': checkItem },
+						{ 'data': 'number' },
+						{ 'data': 'date' },
+						{ 'data': 'receiver_address_name' },
+						{ 'data': 'content' },
+						{ 'data': 'shipment_weight' },
+						{ 'data': 'carrier_name' },
+						{ 'data': 'cod_value' },
+						{ 'data': 'payment_name' },
+						{ 'data': 'price_net' },
+						{ 'render': getStatus },
+						{ 'render': getOrderLink },
+						{ 'render': actionLinks },
+					],
+				} )
+				.on( 'draw.dt', function () {
+					// Zaznaczenia dotycza tylko widocznej strony.
+					$( '#udi-check-all' ).prop( 'checked', false );
+					$( '#bulk-actions-counter' ).html( 0 );
+				} );
 			
 			$( '#udi-check-all' ).change( function () {
 				if ( $( this ).is( ':checked' ) ) {
@@ -182,7 +171,7 @@ usort( $orders, function( $item1, $item2 ){
 					return $( this ).val();
 				} ).get();
 				
-				window.open( '?page=globkurier_protocols&getPdfProtocols=1&hashes=' + orderHashes, '_blank' );
+				window.open( '?page=globkurier_protocols&getPdfProtocols=1&hashes=' + orderHashes + '&_wpnonce=<?php echo esc_js(wp_create_nonce(\udigroup_globkurier\GlobKurierApi::PDF_NONCE)) ?>', '_blank' );
 				button.attr( 'disabled', false );
 
 				return;

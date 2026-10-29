@@ -24,16 +24,8 @@ class GlobKurierDocuments extends GlobKurier
 	public function getOrderLabelPdf($hash)
 	{
 		$api_url = $this->api()->getOrderLabelUrl($hash);
-		$headers = [
-			'x-auth-token' => $this->api()->getToken(),
-		];
 		
-		$response = wp_remote_get(
-			$api_url,
-			[
-				'headers' => $headers,
-			]
-		);
+		$response = wp_remote_get($api_url, $this->api()->pdfRequestArgs('order/labels'));
 		
 		if (is_wp_error($response)) {
 			$error_message = $response->get_error_message();
@@ -49,16 +41,8 @@ class GlobKurierDocuments extends GlobKurier
 	public function getOrderProtocolPdf($hash)
 	{
 		$api_url = $this->api()->getOrderProtocolUrl($hash);
-		$headers = [
-			'x-auth-token' => $this->api()->getToken(),
-		];
 		
-		$response = wp_remote_get(
-			$api_url,
-			[
-				'headers' => $headers,
-			]
-		);
+		$response = wp_remote_get($api_url, $this->api()->pdfRequestArgs('order/protocol'));
 		
 		if (is_wp_error($response)) {
 			$error_message = $response->get_error_message();
@@ -95,6 +79,67 @@ class GlobKurierDocuments extends GlobKurier
 		return $response;
 	}
 	
+	/**
+	 * Dostepnosc etykiet per hash przesylki. Zapytanie do API trwa kilka sekund, wiec wynik zapamietujemy:
+	 * dostepna etykieta nie znika (sprawdzamy raz na dobe), brak etykiety (np. przed oplaceniem) - po 10 minutach.
+	 */
+	public function labelsAvailability(array $hashes)
+	{
+		$hashes = array_values(array_unique(array_filter(array_map('strval', $hashes))));
+		$now    = time();
+
+		$cache = get_option('globkurier_labels_cache', []);
+		$cache = is_array($cache) ? $cache : [];
+
+		$result  = [];
+		$unknown = [];
+		foreach ($hashes as $hash) {
+			if (isset($cache[ $hash ][ 'expires' ]) && $cache[ $hash ][ 'expires' ] > $now) {
+				$result[ $hash ] = ! empty($cache[ $hash ][ 'available' ]);
+			} else {
+				$unknown[] = $hash;
+			}
+		}
+
+		if (! $unknown) {
+			return $result;
+		}
+
+		$response = $this->hasLabels([
+			'orderHashes' => $unknown,
+		]);
+
+		if (($response[ 'code' ] ?? 0) == 200) {
+			$missing = [];
+		} elseif (isset($response[ 'data' ][ 'fields' ]) && is_array($response[ 'data' ][ 'fields' ])) {
+			// API zwraca bledy pod kluczami orderHashes[i] - indeksy dotycza wyslanej listy $unknown.
+			$missing = $response[ 'data' ][ 'fields' ];
+		} else {
+			// Blad API - jak wczesniej pokazujemy brak etykiety i niczego nie zapamietujemy.
+			return $result + array_fill_keys($unknown, false);
+		}
+
+		foreach ($unknown as $key => $hash) {
+			$available = ! array_key_exists("orderHashes[{$key}]", $missing);
+
+			$result[ $hash ] = $available;
+			$cache[ $hash ]  = [
+				'available' => $available,
+				'expires'   => $now + ($available ? DAY_IN_SECONDS : 10 * MINUTE_IN_SECONDS),
+			];
+		}
+
+		foreach ($cache as $hash => $entry) {
+			if (! isset($entry[ 'expires' ]) || $entry[ 'expires' ] <= $now) {
+				unset($cache[ $hash ]);
+			}
+		}
+
+		update_option('globkurier_labels_cache', $cache, false);
+
+		return $result;
+	}
+
 	public function protocols($params)
 	{
 		$function = 'order/protocol';
@@ -116,112 +161,123 @@ class GlobKurierDocuments extends GlobKurier
 		}
 	}
 	
+	/**
+	 * Strona listy "Historia przesylek" (DataTables serverSide) z dostepnoscia etykiet.
+	 */
 	public function get($params)
 	{
-		global $wpdb, $globKurier;
-		
-		$start  = $params[ 'start' ] ?? 0;
-		$length = $params[ 'length' ] ?? 10;
-		
-		$mataName = apply_filters('globkurier_wc_order_meta_name', 'globkurier_orders');
-		
-		$order = [
-			'by'   => 'post_id',
-			'mode' => 'desc',
-		];
-		
-		$searchCondition = '';
-		
-		if ($params[ 'search' ] && $params[ 'search' ][ 'value' ]) {
-			$searches        = esc_sql($params[ 'search' ][ 'value' ]);
-			$searches        = mb_split(' ', $searches);
-			$searchCondition = ' AND (1=1 ';
-			foreach ($searches as $search) {
-				$searchCondition .= $wpdb->prepare(" AND `meta_value` LIKE %s", '%'.$search.'%');
-			}
-			$searchCondition .= ')';
+		$page   = $this->historyPage($params, 'd.m.Y');
+		$orders = $page[ 'rows' ];
+		$hashes = $page[ 'hashes' ];
+
+		$labels = $this->labelsAvailability($hashes);
+
+		foreach ($orders as $i => &$order) {
+			$order[ 'hasLabel' ] = ! empty($labels[ $hashes[ $i ] ]);
 		}
-		
-		$sql = $wpdb->prepare("SELECT `meta_value`, `post_id` FROM `{$wpdb->postmeta}` WHERE meta_key = %s{$searchCondition} ORDER BY %s %s LIMIT %d OFFSET %d", [
-			$mataName,
-			$order[ 'by' ],
-			$order[ 'mode' ],
-			$length,
-			$start,
-		]);
-		
-		$s_orders = $wpdb->get_results($sql, ARRAY_A);
-		
-		$total_orders = $wpdb->get_var($sql2 = $wpdb->prepare("SELECT COUNT(`post_id`) as `total` FROM `{$wpdb->postmeta}` WHERE meta_key = %s{$searchCondition}", [
-			$mataName,
-		]));
-		
-		$orders = [];
-		
-		foreach ($s_orders as $key => $_order) {
-			$data = maybe_unserialize(maybe_unserialize($_order[ 'meta_value' ]));
-			
-			$wcOrderId = $_order[ 'post_id' ];
-			$wcOrder   = wc_get_order($wcOrderId);
-			
-			$order = [];
-			
-			$order[ 'check_btn' ]             = true;
-			$order[ 'number' ]                = $data[ 'number' ];
-			$order[ 'timestamp' ]             = $data[ 'date' ];
-			$order[ 'date' ]                  = date('d.m.Y', $data[ 'date' ]);
-			$order[ 'receiver_address_name' ] = $data[ 'data' ][ 'receiverAddress' ][ 'name' ];
-			$order[ 'content' ]               = $data[ 'data' ][ 'content' ];
-			$order[ 'shipment_weight' ]       = $data[ 'data' ][ 'shipment' ][ 'weight' ];
-			$order[ 'carrier_name' ]          = $data[ 'carrier' ][ 'name' ];
-			$order[ 'cod_value' ]             = $data[ 'cod' ][ 'value' ];
-			$order[ 'payment_name' ]          = $data[ 'payment_name' ];
-			$order[ 'price_net' ]             = number_format(round($data[ 'price' ][ 'net' ], 2), 2);
-			$order[ 'get_status_btn' ]        = '';
-			$order[ 'wc_order_link' ]         = $wcOrder ? $wcOrder->get_edit_order_url() : null;
-			$order[ 'wc_order_id' ]           = $wcOrderId;
-			$order[ 'hash' ]                  = $data[ 'hash' ];
-			$order[ 'order_label_url' ]       = $globKurier->api()->getOrderLabelPdfUrl($data[ 'hash' ]);
-			$order[ 'order_track_url' ]       = $globKurier->api()->getOrderTrackUrl($data[ 'number' ]);
-			$order[ 'hasLabel' ]              = false;
-			
-			$orders[] = $order;
-		}
-		
-		usort($orders, function ($item1, $item2){
-			return $item2[ 'timestamp' ] <=> $item1[ 'timestamp' ];
-		});
-		
-		$hashes = wp_list_pluck($orders, 'hash');
-		
-		$getAllLabels = $this->hasLabels([
-			'orderHashes' => $hashes,
-		]);
-		
-		if ($getAllLabels[ 'code' ] == 200) {
-			foreach ($orders as &$order) {
-				$order[ 'hasLabel' ] = true;
-			}
-		} elseif (isset($getAllLabels[ 'data' ], $getAllLabels[ 'data' ][ 'fields' ])) {
-			$noLabels = $getAllLabels[ 'data' ][ 'fields' ];
-			foreach ($orders as $key => &$order) {
-				$apiOrderKey = "orderHashes[{$key}]";
-				
-				if (! array_key_exists($apiOrderKey, $noLabels)) {
-					$order[ 'hasLabel' ] = true;
-				}
-			}
-		}
-		
+		unset($order);
+
 		$json_data = [
 			'draw'            => $params[ 'draw' ],
-			'recordsTotal'    => $total_orders,
-			'recordsFiltered' => $total_orders,
+			'recordsTotal'    => $page[ 'total' ],
+			'recordsFiltered' => $page[ 'total' ],
 			'data'            => $orders,
 		];
-		
+
 		echo wp_json_encode($json_data);
 		die;
+	}
+
+	/**
+	 * Strona listy "Protokoly" (DataTables serverSide). Wczesniej szablon renderowal wszystkie przesylki naraz.
+	 * Bez sprawdzania etykiet w API - protokol nie zalezy od etykiety.
+	 */
+	public function getProtocolsList($params)
+	{
+		global $globKurier;
+
+		$page   = $this->historyPage($params, 'd.m.Y H:i');
+		$orders = $page[ 'rows' ];
+
+		foreach ($orders as $i => &$order) {
+			$order[ 'order_protocol_url' ] = esc_url($globKurier->api()->getOrderProtocolPdfUrl(rawurlencode($page[ 'hashes' ][ $i ])));
+		}
+		unset($order);
+
+		echo wp_json_encode([
+			'draw'            => $params[ 'draw' ],
+			'recordsTotal'    => $page[ 'total' ],
+			'recordsFiltered' => $page[ 'total' ],
+			'data'            => $orders,
+		]);
+		die;
+	}
+
+	/**
+	 * Wiersze jednej strony historii (wspolne dla historii i protokolow).
+	 *
+	 * @return array{total:int, rows:array<int, array>, hashes:string[]} hashes - surowe, w kolejnosci wierszy
+	 */
+	private function historyPage($params, string $dateFormat): array
+	{
+		global $globKurier;
+
+		$start  = (int) ($params[ 'start' ] ?? 0);
+		$length = (int) ($params[ 'length' ] ?? 10);
+
+		// Historia z wp_postmeta i wc_orders_meta (HPOS), bez duplikatow, najnowsze na gorze. Data nadania siedzi
+		// w zserializowanym wpisie, wiec sortowanie i stronicowanie robimy w PHP na calej (lekkiej) liscie.
+		$page = UDIGroup_ShipmentHistory::query((string) ($params[ 'search' ][ 'value' ] ?? ''), $start, $length);
+
+		// Zamowienia WC dla calej strony jednym zapytaniem (wczesniej wc_get_order dla kazdego wiersza).
+		$wcOrders = UDIGroup_ShipmentHistory::ordersById(array_column($page[ 'items' ], 'owner_id'));
+
+		$orders = [];
+		$hashes = [];
+
+		foreach ($page[ 'items' ] as $item) {
+			$data = $item[ 'entry' ];
+
+			$wcOrderId = $item[ 'owner_id' ];
+			$wcOrder   = $wcOrders[ $wcOrderId ] ?? null;
+
+			// Kolumny tekstowe sa renderowane przez DataTables jako HTML - escapujemy je tutaj.
+			$order = [];
+
+			$order[ 'check_btn' ]             = true;
+			$order[ 'number' ]                = esc_html($data[ 'number' ] ?? '');
+			$order[ 'timestamp' ]             = (int) ($data[ 'date' ] ?? 0);
+			// Czas sklepu (Ustawienia > Ogolne), a nie UTC - przy gmdate() nadania po polnocy mialy date poprzedniego dnia.
+			$order[ 'date' ]                  = wp_date($dateFormat, $order[ 'timestamp' ]);
+			$order[ 'receiver_address_name' ] = esc_html($data[ 'data' ][ 'receiverAddress' ][ 'name' ] ?? '');
+			$order[ 'content' ]               = esc_html($data[ 'data' ][ 'content' ] ?? '');
+			$order[ 'shipment_weight' ]       = esc_html($data[ 'data' ][ 'shipment' ][ 'weight' ] ?? '');
+			$order[ 'carrier_name' ]          = esc_html($data[ 'carrier' ][ 'name' ] ?? '');
+			$order[ 'cod_value' ]             = esc_html($data[ 'cod' ][ 'value' ] ?? '');
+			$order[ 'payment_name' ]          = esc_html($data[ 'payment_name' ] ?? '');
+			$order[ 'price_net' ]             = number_format(round((float) ($data[ 'price' ][ 'net' ] ?? 0), 2), 2);
+			$order[ 'get_status_btn' ]        = '';
+			// hash i adresy tez trafiaja do atrybutow HTML; surowy hash zostaje tylko do zapytania o etykiety w API.
+			$hash = (string) ($data[ 'hash' ] ?? '');
+
+			$order[ 'wc_order_link' ]         = $wcOrder ? esc_url($wcOrder->get_edit_order_url()) : null;
+			$order[ 'wc_order_id' ]           = (int) $wcOrderId;
+			// Numer widoczny dla obslugi sklepu (wtyczki numeracji zamowien) - ID zostaje tylko w linku do edycji.
+			$order[ 'wc_order_number' ]       = $wcOrder ? esc_html($wcOrder->get_order_number()) : '';
+			$order[ 'hash' ]                  = esc_attr($hash);
+			$order[ 'order_label_url' ]       = esc_url($globKurier->api()->getOrderLabelPdfUrl(rawurlencode($hash)));
+			$order[ 'order_track_url' ]       = esc_url($globKurier->api()->getOrderTrackUrl(rawurlencode((string) ($data[ 'number' ] ?? ''))));
+			$order[ 'hasLabel' ]              = false;
+
+			$orders[] = $order;
+			$hashes[] = $hash;
+		}
+
+		return [
+			'total'  => $page[ 'total' ],
+			'rows'   => $orders,
+			'hashes' => $hashes,
+		];
 	}
 	
 	public function getOrder($params)

@@ -1,4 +1,5 @@
 <?php
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- szablon dolaczany wewnatrz funkcji (UDIGroup_Admin::load_admin_page_template()), zmienne sa lokalne, nie globalne.
 
 if (!defined('ABSPATH')) exit; // Exit if accessed directly
 
@@ -7,10 +8,15 @@ global $globKurier;
 
 $globKurier->isUserLoggedIn(true);
 
-if (sanitize_text_field($_GET[ 'getPdfLabels' ] ?? '')) {
+// Pobranie PDF etykiet/protokolow linkiem GET - nonce w adresie (GlobKurierApi::getOrder*PdfUrl, przyciski zbiorcze).
+if (isset($_GET[ 'getPdfLabels' ]) || isset($_GET[ 'getPdfProtocols' ])) {
+	check_admin_referer(\udigroup_globkurier\GlobKurierApi::PDF_NONCE);
+}
+
+if (sanitize_text_field(wp_unslash($_GET[ 'getPdfLabels' ] ?? ''))) {
 	ob_clean();
 
-    $hashes = sanitize_text_field($_GET[ 'hashes' ]) ?? '';
+    $hashes = sanitize_text_field(wp_unslash($_GET[ 'hashes' ] ?? ''));
 	
 	$pdf = $globKurier->documents()->getOrderLabelPdf($hashes);
 	
@@ -24,11 +30,12 @@ if (sanitize_text_field($_GET[ 'getPdfLabels' ] ?? '')) {
 	header('Content-Transfer-Encoding: binary');
 	header('Accept-Ranges: bytes');
 	
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- binarny PDF z API GK wysylany z naglowkiem Content-Type: application/pdf (gdy odpowiedz nie jest PDF, wyzej esc_attr); escapowanie zepsuloby plik.
 	die($pdf);
 }
 
-if (sanitize_text_field($_GET[ 'getPdfProtocols' ] ?? '')) {
-    $hashes = sanitize_text_field($_GET[ 'hashes' ]) ?? '';
+if (sanitize_text_field(wp_unslash($_GET[ 'getPdfProtocols' ] ?? ''))) {
+    $hashes = sanitize_text_field(wp_unslash($_GET[ 'hashes' ] ?? ''));
 
 	$pdf = $globKurier->documents()->getOrderProtocolPdf($hashes);
 	
@@ -43,28 +50,11 @@ if (sanitize_text_field($_GET[ 'getPdfProtocols' ] ?? '')) {
 	header('Content-Transfer-Encoding: binary');
 	header('Accept-Ranges: bytes');
 	
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- binarny PDF z API GK wysylany z naglowkiem Content-Type: application/pdf (gdy odpowiedz nie jest PDF, wyzej esc_attr); escapowanie zepsuloby plik.
 	die($pdf);
 }
 
-$mataName = apply_filters('globkurier_wc_order_meta_name', 'globkurier_orders');
-$query = $wpdb->prepare(
-    "SELECT `meta_value`, `post_id` FROM `{$wpdb->postmeta}` WHERE meta_key = %s",
-    $mataName
-);
-$s_orders = $wpdb->get_results($query, ARRAY_A);
-
-$orders = [];
-foreach ($s_orders as $order) {
-	$data = maybe_unserialize(maybe_unserialize($order[ 'meta_value' ]));
-	
-	$data[ 'wcOrderId' ] = $order[ 'post_id' ];
-	
-	$orders[] = $data;
-}
-
-usort($orders, function ($item1, $item2){
-	return $item2[ 'date' ] <=> $item1[ 'date' ];
-});
+// Tabela laduje dane przez AJAX (globkurierGetOrders) - nie wczytujemy tu calej historii z bazy.
 
 ?>
 
@@ -169,10 +159,10 @@ usort($orders, function ($item1, $item2){
 			
 			function getOrderLink( data, type, full ) {
 				let orderLink = full.wc_order_link;
-				let wcOrderId = full.wc_order_id;
-				
+				let wcOrderNumber = full.wc_order_number || full.wc_order_id;
+
 				if ( orderLink ) {
-					return '<a style="text-decoration: none" href="' + orderLink + '" target="_blank">#' + wcOrderId + '</a>'
+					return '<a style="text-decoration: none" href="' + orderLink + '" target="_blank">#' + wcOrderNumber + '</a>'
 				}
 				
 				return '-';
@@ -210,7 +200,7 @@ usort($orders, function ($item1, $item2){
 			}
 
             let _language = '';
-            $.getJSON('<?= UDIGroup_GLOBKURIER_PLUGIN_DIR_URL ?>/udigroup_globkurier_admin/lang/datatables/pl.json', function(language) {
+            $.getJSON('<?php echo esc_url(UDIGroup_GLOBKURIER_PLUGIN_DIR_URL.'/udigroup_globkurier_admin/lang/datatables/pl.json') ?>', function(language) {
                 _language = language;
             });
 
@@ -271,7 +261,7 @@ usort($orders, function ($item1, $item2){
 				
 				let format = $( '#bulk-print-format' ).val();
 				
-				window.open( '?page=globkurier_all_orders&getPdfLabels=1&hashes=' + orderHashes, '_blank' );
+				window.open( '?page=globkurier_all_orders&getPdfLabels=1&hashes=' + orderHashes + '&_wpnonce=<?php echo esc_js(wp_create_nonce(\udigroup_globkurier\GlobKurierApi::PDF_NONCE)) ?>', '_blank' );
 				return;
 				
 				let ajaxData = {

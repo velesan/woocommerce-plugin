@@ -1,4 +1,9 @@
 ( function ( $ ) {
+	// Escapowanie danych (API) przed wklejeniem do HTML lub atrybutu.
+	function gkEsc( value ) {
+		return $( '<div>' ).text( value === undefined || value === null ? '' : value ).html().replace( /"/g, '&quot;' ).replace( /'/g, '&#39;' );
+	}
+	
 	$( function () {
 		
 		let gkOpenModalRequest = null;
@@ -384,6 +389,7 @@
 					wpopieka_globkurier_bulk_send_data.ajax_url,
 					{
 						action: 'globkurierGetCrossborderTerminals',
+						nonce: wpopieka_globkurier_bulk_send_data.crossborder_terminals_nonce,
 						productId: carrierId
 					},
 					function ( response ) {
@@ -432,14 +438,14 @@
 				$( '.globkurier-only-crossborder' ).css( 'display', 'contents' );
 			}
 			
-			detailsContainer.find( '.udi-selected-product-body-name, .udi-selected-product-body-name' ).html( carrierData.carrierName );
+			detailsContainer.find( '.udi-selected-product-body-name, .udi-selected-product-body-name' ).text( carrierData.carrierName );
 			detailsContainer.find( '.udi-product-img' ).attr( 'src', carrierData.carrierLogoLink );
 			detailsContainer.find( '.udi-product-price' ).html( carrierData.netPrice.toFixed( 2 ) + 'zł' );
 			
 			$( '#udi-carrierNetPrice' ).val( carrierData.netPrice.toFixed( 2 ) );
 			$( '#udi-carrierGrossPrice' ).val( carrierData.grossPrice.toFixed( 2 ) );
 			
-			detailsContainer.find( '.udi-selected-product-description' ).html( carrierData.name );
+			detailsContainer.find( '.udi-selected-product-description' ).text( carrierData.name );
 			
 			selectProductContainer.hide();
 			
@@ -505,10 +511,11 @@
 					let priceDescription = '';
 					
 					if ( addon.priceDescription ) {
-						priceDescription = '<br/><span style="font-size: x-small">(' + addon.priceDescription + ')</span>';
+						priceDescription = '<br/><span style="font-size: x-small">(' + gkEsc( addon.priceDescription ) + ')</span>';
 					}
 					
-					let extra = '<div class="udi-product-extra udi-extra-' + addon.id + '">\n\t<div class="udi-product-extra-col1">\n\t\t<input ' + required + ' class="udi-product-extras-input ' + requiredClass + '" name="udi-product-extras[' + addon.category + '][' + addon.id + '][]"  data-minval="' + ( addon.minValue || '' ) + '" data-maxval="' + ( addon.maxValue || '' ) + '"  data-addonName="' + addon.addonName + '" data-price="' + addon.price + '" data-id="' + addon.id + '" data-category="' + addon.category + '" value="' + addon.id + '" id="udi-product-extra' + addon.id + '" type="checkbox"></div>\n\t<div class="udi-product-extra-col2"><label for="udi-product-extra' + addon.id + '">' + addon.addonName + '</label>' + priceDescription + '</div>\n\t<div class="udi-product-extra-col3">' + ( addon.tooltip || '' ) + '+' + addon.price.toFixed( 2 ) + 'zł</div>\n</div>';
+					// addon.tooltip to celowo HTML: wc_help_tip() budowany i sanityzowany po stronie serwera (GlobKurierAddons::productAddons).
+					let extra = '<div class="udi-product-extra udi-extra-' + gkEsc( addon.id ) + '">\n\t<div class="udi-product-extra-col1">\n\t\t<input ' + required + ' class="udi-product-extras-input ' + requiredClass + '" name="udi-product-extras[' + gkEsc( addon.category ) + '][' + gkEsc( addon.id ) + '][]"  data-minval="' + gkEsc( ( addon.minValue || '' ) ) + '" data-maxval="' + gkEsc( ( addon.maxValue || '' ) ) + '"  data-addonName="' + gkEsc( addon.addonName ) + '" data-price="' + addon.price + '" data-id="' + gkEsc( addon.id ) + '" data-category="' + gkEsc( addon.category ) + '" value="' + gkEsc( addon.id ) + '" id="udi-product-extra' + gkEsc( addon.id ) + '" type="checkbox"></div>\n\t<div class="udi-product-extra-col2"><label for="udi-product-extra' + gkEsc( addon.id ) + '">' + gkEsc( addon.addonName ) + '</label>' + priceDescription + '</div>\n\t<div class="udi-product-extra-col3">' + ( addon.tooltip || '' ) + '+' + addon.price.toFixed( 2 ) + 'zł</div>\n</div>';
 					
 					switch ( addon.category ) {
 						case 'CASH_ON_DELIVERY':
@@ -624,32 +631,32 @@
 						
 						switch ( $( this )[ 0 ].type ) {
 							case 'text':
-								field = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-insurance-value" class="udi-options-body-label">' + f.label + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t<input type="text" value="" class="globkurier-is-required" style="flex-basis: 100%;" id="globkurier-custom-extra-required-' + f.name + '">\n\t</div>\n</div>';
+								field = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-insurance-value" class="udi-options-body-label">' + gkEsc( f.label ) + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t<input type="text" value="" class="globkurier-is-required" style="flex-basis: 100%;" id="globkurier-custom-extra-required-' + gkEsc( f.name ) + '">\n\t</div>\n</div>';
 								break;
 							case 'number':
 								let min = '';
 								let max = '';
 								
 								if ( $( this )[ 0 ].min ) {
-									min = 'min=' + $( this )[ 0 ].min;
+									min = 'min="' + gkEsc( $( this )[ 0 ].min ) + '"';
 								}
 								
 								if ( $( this )[ 0 ].max ) {
-									max = 'max=' + $( this )[ 0 ].max;
+									max = 'max="' + gkEsc( $( this )[ 0 ].max ) + '"';
 								}
 								
-								field = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-insurance-value" class="udi-options-body-label">' + f.label + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t<input type="number" ' + min + ' ' + max + ' value="" class="globkurier-is-required" style="flex-basis: 100%;" id="globkurier-custom-extra-required-' + f.name + '">\n\t</div>\n</div>';
+								field = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-insurance-value" class="udi-options-body-label">' + gkEsc( f.label ) + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t<input type="number" ' + min + ' ' + max + ' value="" class="globkurier-is-required" style="flex-basis: 100%;" id="globkurier-custom-extra-required-' + gkEsc( f.name ) + '">\n\t</div>\n</div>';
 								break;
 							case 'select':
-								field = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-insurance-value" class="udi-options-body-label">' + f.label + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t\n\t\t<select style="width: 100%" name="" id="globkurier-custom-extra-required-' + f.name + '" class="globkurier-is-required ' + ( f.class || '' ) + '">';
+								field = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-insurance-value" class="udi-options-body-label">' + gkEsc( f.label ) + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t\n\t\t<select style="width: 100%" name="" id="globkurier-custom-extra-required-' + gkEsc( f.name ) + '" class="globkurier-is-required ' + gkEsc( f.class || '' ) + '">';
 								for ( const key in f.options ) {
-									field += '<option value="' + ( parseInt( key ) || key.trim() || '' ) + '">' + f.options[ key ] + '</option>';
+									field += '<option value="' + gkEsc( ( parseInt( key ) || key.trim() || '' ) ) + '">' + gkEsc( f.options[ key ] ) + '</option>';
 								}
 								break;
 							case 'select2':
-								field = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-insurance-value" class="udi-options-body-label">' + f.label + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t\n\t\t<select style="width: 100%" name="" id="globkurier-custom-extra-required-' + f.name + '" class="globkurier-is-required ' + ( f.class || '' ) + '">';
+								field = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-insurance-value" class="udi-options-body-label">' + gkEsc( f.label ) + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t\n\t\t<select style="width: 100%" name="" id="globkurier-custom-extra-required-' + gkEsc( f.name ) + '" class="globkurier-is-required ' + gkEsc( f.class || '' ) + '">';
 								for ( const key in f.options ) {
-									field += '<option value="' + ( parseInt( key ) || key.trim() || '' ) + '">' + f.options[ key ] + '</option>';
+									field += '<option value="' + gkEsc( ( parseInt( key ) || key.trim() || '' ) ) + '">' + gkEsc( f.options[ key ] ) + '</option>';
 								}
 								break;
 							default:
@@ -659,7 +666,7 @@
 						container.append( field );
 						
 						if ( $( this )[ 0 ].type == 'select2' ) {
-							$( document ).find( '.' + f.class ).select2( {
+							$( document ).find( /^[A-Za-z0-9_-]+$/.test( f.class || '' ) ? '.' + f.class : [] ).select2( {
 								placeholder: 'Znajdź punkt dostawy',
 								language: {
 									searching: function () {
@@ -884,6 +891,8 @@
 			let senderStateId = $( '#globkurier-custom-extra-required-senderStateId' ).val();
 			let receiverStateId = $( '#globkurier-custom-extra-required-receiverStateId' ).val();
 			
+			let containsDangerousGoods = $( '#globkurier-contains-dangerous-goods' ).is( ':checked' ) ? 1 : 0;
+			
 			let receiverAddressPointId = $( '#globkurier-custom-extra-required-receiverAddressPointId' ).val();
 			let senderAddressPointId = $( '#globkurier-custom-extra-required-senderAddressPointId' ).val();
 			
@@ -957,6 +966,8 @@
 					'purpose': purpose,
 					'senderStateId': senderStateId,
 					'receiverStateId': receiverStateId,
+					
+					'containsDangerousGoods': containsDangerousGoods,
 					
 					'receiverAddressPointId': receiverAddressPointId,
 					'senderAddressPointId': senderAddressPointId,
@@ -1173,7 +1184,11 @@
 				netPrice.val( price.totalNetPrice );
 				grossPrice.val( price.totalGrossPrice );
 				
-				let netPriceWithAddons = parseFloat( price.productNetPrice ) + parseFloat( price.addonsNetPrice );
+				// Suma netto z API (produkt + dodatki + dopłata paliwowa - rabat); sama suma produktu i dodatków pomijała dopłatę paliwową.
+				let netPriceWithAddons = parseFloat( price.totalNetPrice );
+				if ( isNaN( netPriceWithAddons ) ) {
+					netPriceWithAddons = parseFloat( price.productNetPrice ) + parseFloat( price.addonsNetPrice );
+				}
 				let totalGrossPrice = parseFloat( price.totalGrossPrice );
 				
 				$( '#udi-carrierNetPriceWithAddons' ).val( parseFloat( netPriceWithAddons ).toFixed( 2 ) );
@@ -1222,7 +1237,7 @@
 								selected = 'selected';
 							}
 							
-							let option = '<option value="' + value.id + '" ' + selected + '>' + value.name + '</option>';
+							let option = '<option value="' + gkEsc( value.id ) + '" ' + selected + '>' + gkEsc( value.name ) + '</option>';
 							container.append( option );
 						}
 					} )
@@ -1261,7 +1276,7 @@
 					container.append( option );
 				} else {
 					$( times ).each( function ( key, time ) {
-						let option = '<option>' + time.timeFrom + ' - ' + time.timeTo + '</option>';
+						let option = '<option>' + gkEsc( time.timeFrom ) + ' - ' + gkEsc( time.timeTo ) + '</option>';
 						container.append( option );
 					} )
 				}
@@ -1419,17 +1434,17 @@
 							let min, max;
 							
 							if ( field.min ) {
-								min = 'data-minvalue=' + field.min;
+								min = 'data-minvalue="' + gkEsc( field.min ) + '"';
 							}
 							
 							if ( field.max ) {
-								max = 'data-maxvalue=' + field.max;
+								max = 'data-maxvalue="' + gkEsc( field.max ) + '"';
 							}
 							
 							if ( field.type === 'select' ) {
-								input = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-' + field.name + '" class="udi-options-body-label">' + field.label + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t<select ' + required + ' style="flex-basis: 100%;" data-label="' + field.label + '" id="globkurier-addon-extra-' + field.name + '" type="text">\n\t\t\t' + field.options + '\n\t\t</select>\n\t\n<small>' + help + '</small></div></div>';
+								input = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-' + gkEsc( field.name ) + '" class="udi-options-body-label">' + gkEsc( field.label ) + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t<select ' + required + ' style="flex-basis: 100%;" data-label="' + gkEsc( field.label ) + '" id="globkurier-addon-extra-' + gkEsc( field.name ) + '" type="text">\n\t\t\t' + field.options + '\n\t\t</select>\n\t\n<small>' + gkEsc( help ) + '</small></div></div>';
 							} else {
-								input = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-' + field.name + '" class="udi-options-body-label">' + field.label + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t<input data-label="' + field.label + '" type="' + type + '" ' + min + ' ' + max + ' value="' + value + '"' + required + ' style="flex-basis: 100%;" id="globkurier-addon-extra-' + field.name + '" type="text"></input>\n\t\n<small>' + help + '</small></div></div>';
+								input = '<div style="display: contents;">\n\t<label for="globkurier-addon-extra-' + gkEsc( field.name ) + '" class="udi-options-body-label">' + gkEsc( field.label ) + ':</label>\n\t<div class="udi-input-with-notice">\n\t\t<input data-label="' + gkEsc( field.label ) + '" type="' + gkEsc( type ) + '" ' + min + ' ' + max + ' value="' + gkEsc( value ) + '"' + required + ' style="flex-basis: 100%;" id="globkurier-addon-extra-' + gkEsc( field.name ) + '" type="text"></input>\n\t\n<small>' + gkEsc( help ) + '</small></div></div>';
 							}
 							container.append( input );
 						} );
@@ -1502,12 +1517,18 @@
 				}
 			} );
 			
+			// GlobKurier nie przyjmuje towarow niebezpiecznych - bez tego blad zwracalo dopiero API GK.
+			if ( $( '#globkurier-contains-dangerous-goods' ).is( ':checked' ) ) {
+				globkurier_add_error( '', $( '#globkurier-contains-dangerous-goods' ) );
+				addNoticeError( '<p><strong>Towary niebezpieczne</strong>: GlobKurier nie przyjmuje towarów niebezpiecznych - usuń je z przesyłki i odznacz to pole.</p>' );
+				valueErrors++;
+			}
+			
 			let errors = 0;
 			
 			$( '.udi-service-options-body .globkurier-is-required' ).each( function () {
 				if ( $( this ).val() == '' ) {
 					globkurier_add_error( '', $( this ) );
-					console.log( $( this ) );
 					errors++;
 				}
 			} );
@@ -1549,30 +1570,30 @@
 			$( '.udi-wpadmin-order-address' ).hide();
 			$( '.udi-step-select-product-details' ).hide();
 			
-			$( '.udi-confirm-address-sender-name' ).html( data.sender_name );
-			$( '.udi-confirm-address-sender-street' ).html( data.sender_street );
-			$( '.udi-confirm-address-sender-homeNumber' ).html( data.sender_home );
-			$( '.udi-confirm-address-sender-flatNumber' ).html( data.sender_flat );
-			$( '.udi-confirm-address-sender-city' ).html( data.sender_city );
-			$( '.udi-confirm-address-sender-postal' ).html( data.sender_postCode );
-			$( '.udi-confirm-address-sender-flnames' ).html( data.sender_name );
-			$( '.udi-confirm-address-sender-phone' ).html( data.sender_phone );
-			$( '.udi-confirm-address-sender-email' ).html( data.sender_email );
+			$( '.udi-confirm-address-sender-name' ).text( data.sender_name );
+			$( '.udi-confirm-address-sender-street' ).text( data.sender_street );
+			$( '.udi-confirm-address-sender-homeNumber' ).text( data.sender_home );
+			$( '.udi-confirm-address-sender-flatNumber' ).text( data.sender_flat );
+			$( '.udi-confirm-address-sender-city' ).text( data.sender_city );
+			$( '.udi-confirm-address-sender-postal' ).text( data.sender_postCode );
+			$( '.udi-confirm-address-sender-flnames' ).text( data.sender_name );
+			$( '.udi-confirm-address-sender-phone' ).text( data.sender_phone );
+			$( '.udi-confirm-address-sender-email' ).text( data.sender_email );
 			
 			var count = parseInt( $( '[name="gk_orders_count"]' ).val() );
 			for ( var orderId = 0; orderId < count; orderId++ ) {
 				updateOrderAddress( orderId );
 			}
 			
-			$( '.udi-confirm-product-name' ).html( data.carrier_name + ':' );
-			$( '.udi-confirm-product-count .udi-confirm-value' ).html( data.quantity );
-			$( '.udi-confirm-product-date .udi-confirm-value' ).html( data.date );
-			$( '.udi-confirm-product-time .udi-confirm-value' ).html( data.time );
-			$( '.udi-confirm-product-content .udi-confirm-value' ).html( data.description );
+			$( '.udi-confirm-product-name' ).text( data.carrier_name + ':' );
+			$( '.udi-confirm-product-count .udi-confirm-value' ).text( data.quantity );
+			$( '.udi-confirm-product-date .udi-confirm-value' ).text( data.date );
+			$( '.udi-confirm-product-time .udi-confirm-value' ).text( data.time );
+			$( '.udi-confirm-product-content .udi-confirm-value' ).text( data.description );
 			$( '.udi-confirm-product-terminal' ).hide();
-			$( '.udi-confirm-payment-product-name' ).html( data.carrier_name );
+			$( '.udi-confirm-payment-product-name' ).text( data.carrier_name );
 			$( '.udi-confirm-product-price' ).html( $( '#udi-carrierNetPrice' ).val() + 'zł' );
-			$( '.udi-confirm-payment-method' ).html( data.payment_name );
+			$( '.udi-confirm-payment-method' ).text( data.payment_name );
 			
 			let totalNetPrice = $( '#udi-carrierNetPriceWithAddons' ).val() + 'zł (netto)';
 			let totalGrossPrice = $( '#udi-carrierGrossPriceWithAddons' ).val() + 'zł (brutto)';
@@ -1587,7 +1608,7 @@
 				let price = $( this ).data( 'price' );
 				let category = $( this ).data( 'category' );
 				
-				let extraHtml = '<div class="udi-confirm-extra-name">' + name + ': <span class="udi-confirm-extra-price">' + price.toFixed( 2 ) + 'zł</span></div>';
+				let extraHtml = '<div class="udi-confirm-extra-name">' + $( '<div>' ).text( name ).html() + ': <span class="udi-confirm-extra-price">' + price.toFixed( 2 ) + 'zł</span></div>';
 				
 				switch ( category ) {
 					case 'CASH_ON_DELIVERY':
@@ -1624,7 +1645,7 @@
 			
 			Object.entries( mapping ).forEach( function ( [ key, value ] ) {
 				var selector = '[data-target="' + key + '[' + orderId + ']"]';
-				$( selector ).html( value );
+				$( selector ).text( value );
 			} );
 		}
 		
@@ -1677,7 +1698,8 @@
 					'addons': 'Dodatki',
 					'pickup[timeFrom]': 'Godzina nadania',
 					'pickup[timeTo]': 'Godzina nadania',
-					'paymentId': 'Płatność'
+					'paymentId': 'Płatność',
+					'containsDangerousGoods': 'Towary niebezpieczne'
 				};
 				
 				let hasErrors = false;
@@ -1686,7 +1708,7 @@
 				if (result.success) {
 					hasSuccess = true;
 					$.each(result.success, function(orderId, orderNumber) {
-						addNoticeSuccess('<p>Zamówienie ID: <strong>' + orderId + '</strong> - Numer przesyłki: <strong>' + orderNumber + '</strong></p>');
+						addNoticeSuccess('<p>Zamówienie ID: <strong>' + gkEsc( orderId ) + '</strong> - Numer przesyłki: <strong>' + gkEsc( orderNumber ) + '</strong></p>');
 					});
 				}
 				
@@ -1696,7 +1718,7 @@
 						addNoticeError('<p><strong>Błąd dla zamówienia ID: ' + orderId + '</strong></p>');
 						$.each(fields, function(field, error) {
 							let fieldName = fieldMap[field] || field;
-							addNoticeError('<p style="margin-left: 20px;">' + fieldName + ': <strong>' + error + '</strong></p>');
+							addNoticeError('<p style="margin-left: 20px;">' + gkEsc( fieldName ) + ': <strong>' + gkEsc( error ) + '</strong></p>');
 						});
 					});
 				}

@@ -1,4 +1,7 @@
 <?php
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- szablon dolaczany wewnatrz funkcji (WoocommerceAddons::globkurier_meta_old_orders_box_content() i UDIGroup_Admin_Ajax::globkurierGetOldOrdersAsync()), zmienne sa lokalne, nie globalne.
+
+use udigroup_globkurier\UDIGroup_ShipmentHistory;
 
 if (!defined('ABSPATH')) exit; // Exit if accessed directly
 
@@ -6,19 +9,8 @@ if (!defined('ABSPATH')) exit; // Exit if accessed directly
  * @var int $orderId
  **/
 
-if($orderId) {
-	$order = wc_get_orders(
-		[
-			'post__in' => [$orderId],
-			'limit'    => 1,
-			'status'   => 'any'
-		]
-	)[ 0 ];
-}
-$mataName  = apply_filters( 'globkurier_wc_order_meta_name', 'globkurier_orders' );
-$oldOrders = $order
-	? array_reverse( $order->get_meta( $mataName, FALSE ) )
-	: get_post_meta( $orderId,  $mataName, FALSE );
+// Najnowsze na gorze. Historia laczy wp_postmeta i wc_orders_meta (wersje do 2.5.4 zapisywaly tylko do postmeta).
+$oldOrders = array_reverse( UDIGroup_ShipmentHistory::forOrder( $orderId ) );
 
 ?>
 
@@ -45,11 +37,10 @@ $oldOrders = $order
 		global $globKurier;
 		
 		foreach( $oldOrders ?? [] as $order ){
-			$order = maybe_unserialize( $order->value ?? $order );
 			?>
 			<tr>
 				<td><?php echo esc_attr($order[ 'number' ] ?? '') ?></td>
-				<td><?php echo esc_attr(date( 'd.m.Y H:i', $order[ 'date' ] ) ?? '' )?></td>
+				<td><?php echo esc_attr(wp_date( 'd.m.Y H:i', (int) ( $order[ 'date' ] ?? 0 ) ) ?: '' )?></td>
 				<td><?php echo esc_attr($order[ 'data' ][ 'receiverAddress' ][ 'name' ] ?? '') ?></td>
 				<td><?php echo esc_attr($order[ 'data' ][ 'content' ] ?? '') ?></td>
 				<td><?php echo esc_attr($order[ 'data' ][ 'shipment' ][ 'weight' ] ?? '' )?></td>
@@ -75,6 +66,14 @@ $oldOrders = $order
 		}
 		?>
 		</tbody>
-	
+
 	</table>
 </div>
+
+<script>
+	// Statusy przesylek pobierane od razu po otwarciu zamowienia (z cache serwera, 15 min); przycisk "Aktualizuj" pobiera swiezy.
+	// Po "load" - handler klikniecia rejestruje udi-admin.js, ktory moze byc w stopce.
+	jQuery( window ).on( 'load', function () {
+		jQuery( '#globkurier_old_orders .udi-get-current-status' ).slice( 0, 10 ).trigger( 'click', [ { useCache: true } ] );
+	} );
+</script>

@@ -1,5 +1,7 @@
 <?php
 
+if (!defined('ABSPATH')) exit; // Exit if accessed directly
+
 use Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface;
 
 define('GlobkurierPickupPoint_VERSION', '0.1.0');
@@ -260,6 +262,7 @@ class GlobkurierPickupPoint_Blocks_Integration implements IntegrationInterface
 				
 				$gkSettingsLocalized[ 'providers' ][ $carrierId ] = [
 					'label'           => $carrierId,
+					'carrierId'       => $carrierId,
 					'active'          => true,
 					'method'          => $_method,
 					'productId'       => $globKurier->extraPickupPoints()->findProductIdForCarrierId($carrierId),

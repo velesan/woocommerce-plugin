@@ -14,8 +14,17 @@
 	};
 
 	var SEP = ' ;; ';
+	
+	// Licznik zapytan o konfiguracje - spozniona odpowiedz dla poprzedniego przewoznika jest ignorowana.
+	var configRequestId = 0;
+	
+	// Wartosc do selektora atrybutu: nazwy pol i kody HS przychodza z API i moga zawierac cudzyslow.
+	function attrEsc(value) {
+		return String(value === undefined || value === null ? '' : value).replace(/["\\]/g, '\\$&');
+	}
 
 	window.globkurierCustoms = {
+		confirmCarrierChange: confirmCarrierChange,
 		onCarrierSelected: onCarrierSelected,
 		getPayload: getPayload,
 		getCustomsNotice: getCustomsNotice
@@ -28,13 +37,23 @@
 		return '';
 	}
 
+	/**
+	 * Wolane PRZED wyborem przewoznika - false = uzytkownik anulowal, wybor nie powinien sie zmienic.
+	 */
+	function confirmCarrierChange(newCarrierName) {
+		if (state.declaration && newCarrierName && newCarrierName !== state.carrierName) {
+			return window.confirm(i18n.resetConfirm || 'Zmiana wyczyści deklarację. Kontynuować?');
+		}
+		return true;
+	}
+
 	function onCarrierSelected(carrierData, senderCountry, receiverCountry) {
 		var newCarrier = (carrierData && carrierData.carrierName) ? carrierData.carrierName : '';
 
-		if (state.declaration && newCarrier !== state.carrierName) {
-			if (!window.confirm(i18n.resetConfirm || 'Zmiana wyczyści deklarację. Kontynuować?')) {
-				return;
-			}
+		// Ponowny wybor tego samego przewoznika (te same kraje) nie kasuje wypelnionej deklaracji.
+		if (state.declaration && newCarrier === state.carrierName
+			&& senderCountry === state.senderCountry && receiverCountry === state.receiverCountry) {
+			return;
 		}
 
 		resetDeclaration();
@@ -66,7 +85,9 @@
 			})
 			.fail(function () {
 				if (onFail) { onFail(); }
-				showModalError(i18n.requestError || 'Błąd komunikacji.');
+				if ($('#globkurier-customs-modal-overlay').is(':visible')) {
+					showModalError(i18n.requestError || 'Błąd komunikacji.');
+				}
 			});
 	}
 
@@ -76,11 +97,23 @@
 			return;
 		}
 
+		var requestId = ++configRequestId;
+		hideConfigError();
+
 		post('globkurierGetCustomsConfig', cfg.nonces.config, {
 			senderCountry: state.senderCountry,
 			receiverCountry: state.receiverCountry,
 			carrierName: state.carrierName
 		}, function (res) {
+			if (requestId !== configRequestId) {
+				return;
+			}
+			if (res && res.success && res.data && res.data.error) {
+				// Nie wiadomo, czy deklaracja jest wymagana - nie udajemy, ze nie jest.
+				resetDeclaration();
+				showConfigError();
+				return;
+			}
 			if (res && res.success && res.data && res.data.required && res.data.schema) {
 				state.required = true;
 				state.schema = res.data.schema;
@@ -90,7 +123,22 @@
 			} else {
 				resetDeclaration();
 			}
+		}, function () {
+			if (requestId === configRequestId) {
+				resetDeclaration();
+				showConfigError();
+			}
 		});
+	}
+
+	function showConfigError() {
+		showSection();
+		$('#globkurier-customs-section .globkurier-customs-section__row').hide();
+		$('#globkurier-customs-config-error').show();
+	}
+	function hideConfigError() {
+		$('#globkurier-customs-config-error').hide();
+		$('#globkurier-customs-section .globkurier-customs-section__row').show();
 	}
 
 	function showSection() { $('#globkurier-customs-section').show(); }
@@ -402,7 +450,7 @@
 			if (!fn || !Array.isArray(fn.args)) { return; }
 			var product = 1;
 			fn.args.forEach(function (n) { product *= num(valByName($row, n)); });
-			var $out = $row.find('[data-name="' + field.name + '"]');
+			var $out = $row.find('[data-name="' + attrEsc(field.name) + '"]');
 			if ($out.length) { $out.val(product.toFixed(precisionOf($out, defaultPrecision(field.name)))); }
 		});
 	}
@@ -430,7 +478,7 @@
 				}
 			});
 
-			var $tw = $('#globkurier-customs-modal-body .globkurier-customs-fieldgroup[data-name="' + field.name + '"]').first();
+			var $tw = $('#globkurier-customs-modal-body .globkurier-customs-fieldgroup[data-name="' + attrEsc(field.name) + '"]').first();
 			if (!$tw.length) { return; }
 
 			var wanted = Math.max(units.length, 1);
@@ -448,7 +496,7 @@
 				var $r = $totalRows.eq(i);
 				setByName($r, dest[0], unit);
 				for (var j = 1; j < dest.length; j++) {
-					setByName($r, dest[j], sumsByUnit[unit][j].toFixed(precisionOf($r.find('[data-name="' + dest[j] + '"]'), defaultPrecision(dest[j]))));
+					setByName($r, dest[j], sumsByUnit[unit][j].toFixed(precisionOf($r.find('[data-name="' + attrEsc(dest[j]) + '"]'), defaultPrecision(dest[j]))));
 				}
 			});
 		});
@@ -492,7 +540,7 @@
 		var ok = true;
 
 		state.schema.fields.forEach(function (field) {
-			var $group = $('#globkurier-customs-modal-body .globkurier-customs-fieldgroup[data-name="' + field.name + '"]').first();
+			var $group = $('#globkurier-customs-modal-body .globkurier-customs-fieldgroup[data-name="' + attrEsc(field.name) + '"]').first();
 			if (!$group.length) { return; }
 
 			var msg = sumValidatorError(field);
@@ -513,10 +561,10 @@
 	}
 
 	function valByName($scope, name) {
-		return $scope.find('[data-name="' + name + '"]').val();
+		return $scope.find('[data-name="' + attrEsc(name) + '"]').val();
 	}
 	function setByName($scope, name, val) {
-		$scope.find('[data-name="' + name + '"]').val(val);
+		$scope.find('[data-name="' + attrEsc(name) + '"]').val(val);
 	}
 	function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 	function precisionOf($el, def) {
@@ -525,9 +573,9 @@
 	}
 
 	function dualPlValue($row, name) {
-		var $dual = $row.find('[data-name="' + name + '"][data-dual="1"]');
+		var $dual = $row.find('[data-name="' + attrEsc(name) + '"][data-dual="1"]');
 		if ($dual.length) { return $dual.find('input[data-lng="pl"]').val() || ''; }
-		return $row.find('[data-name="' + name + '"]').val() || '';
+		return $row.find('[data-name="' + attrEsc(name) + '"]').val() || '';
 	}
 
 	function hsSourceFields() {
@@ -566,7 +614,7 @@
 				var code = res.data.code;
 				var label = code + ' - ' + (res.data.description || parts);
 				$sel.find('option[data-auto="1"]').filter(function () { return this.value !== code; }).remove();
-				var $opt = $sel.find('option[value="' + code + '"]');
+				var $opt = $sel.find('option[value="' + attrEsc(code) + '"]');
 				if (!$opt.length) {
 					$sel.append($(new Option(label, code, true, true)).attr('data-auto', '1'));
 				} else {
@@ -748,7 +796,7 @@
 
 	function collectCompound(field) {
 		var obj = {};
-		var $group = $('#globkurier-customs-modal-body .globkurier-customs-fieldgroup[data-name="' + field.name + '"]').first();
+		var $group = $('#globkurier-customs-modal-body .globkurier-customs-fieldgroup[data-name="' + attrEsc(field.name) + '"]').first();
 		(field.fields || []).forEach(function (sub) {
 			obj[sub.name] = readFieldByName($group, sub);
 		});
@@ -756,7 +804,7 @@
 	}
 
 	function collectCompoundList(field) {
-		var $group = $('#globkurier-customs-modal-body .globkurier-customs-fieldgroup[data-name="' + field.name + '"]').first();
+		var $group = $('#globkurier-customs-modal-body .globkurier-customs-fieldgroup[data-name="' + attrEsc(field.name) + '"]').first();
 		var list = [];
 		$group.children('.globkurier-customs-row').each(function () {
 			var $row = $(this);
@@ -794,18 +842,22 @@
 	function readFieldByName($scope, field) {
 		var ft = field.frontType || field.type || 'text';
 		if (ft === 'dual_description') {
-			var $dual = $scope.find('[data-name="' + field.name + '"][data-dual="1"]').first();
+			var $dual = $scope.find('[data-name="' + attrEsc(field.name) + '"][data-dual="1"]').first();
 			var pl = $dual.find('input[data-lng="pl"]').val() || '';
 			var en = $dual.find('input[data-lng="en"]').val() || '';
 			return pl + SEP + en;
 		}
-		var $in = $scope.find('[data-name="' + field.name + '"]').first();
+		var $in = $scope.find('[data-name="' + attrEsc(field.name) + '"]').first();
 		var val = $in.val();
 		if (ft === 'number') { return val === '' ? null : Number(val); }
 		return val;
 	}
 
 	$(document)
+		.on('click', '#globkurier-customs-config-retry', function (e) {
+			e.preventDefault();
+			fetchConfig();
+		})
 		.on('click', '#globkurier-customs-edit-btn', function (e) {
 			e.preventDefault();
 			openModal();

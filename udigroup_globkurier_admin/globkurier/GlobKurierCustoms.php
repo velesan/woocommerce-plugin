@@ -42,7 +42,12 @@ class GlobKurierCustoms extends GlobKurier{
 		$token    = $this->api()->getToken();
 		$response = $this->api()->getResponse( $function, $token, $params, $method );
 
-		if( $response[ 'code' ] != 200 || empty( $response[ 'data' ][ 'sections' ] ) ){
+		// Blad API (lub brak odpowiedzi) - nie wiemy, czy deklaracja jest wymagana; UI pokazuje blad z ponowieniem.
+		if( (int) $response[ 'code' ] !== 200 ){
+			return [ 'required' => FALSE, 'error' => TRUE ];
+		}
+
+		if( empty( $response[ 'data' ][ 'sections' ] ) ){
 			return [ 'required' => FALSE ];
 		}
 
@@ -132,7 +137,8 @@ class GlobKurierCustoms extends GlobKurier{
 
 	private function getUserId( $token ){
 
-		$cached = get_transient( self::USER_ID_TRANSIENT );
+		$transient = $this->userIdTransient();
+		$cached    = get_transient( $transient );
 
 		if( $cached ){
 			return (int) $cached;
@@ -150,9 +156,14 @@ class GlobKurierCustoms extends GlobKurier{
 			return NULL;
 		}
 
-		set_transient( self::USER_ID_TRANSIENT, (int) $userId, self::COUNTRIES_TTL );
+		set_transient( $transient, (int) $userId, self::COUNTRIES_TTL );
 
 		return (int) $userId;
+	}
+
+	private function userIdTransient(): string{
+
+		return self::USER_ID_TRANSIENT . '_' . md5( (string) $this->settings( 'username', '' ) );
 	}
 
 	public function importOrderItems( $orderId ): array{
@@ -174,9 +185,16 @@ class GlobKurierCustoms extends GlobKurier{
 				continue;
 			}
 
+			// Ilosc po zwrotach (get_qty_refunded_for_item zwraca liczbe ujemna).
+			$quantity = $item->get_quantity() + $order->get_qty_refunded_for_item( $item->get_id() );
+
+			if( $quantity <= 0 ){
+				continue;
+			}
+
 			$commodity = [
 				'description' => $item->get_name(),
-				'quantity'    => $item->get_quantity(),
+				'quantity'    => $quantity,
 			];
 
 			if( $product && $product->get_weight() !== '' && $product->get_weight() !== NULL ){
@@ -219,6 +237,14 @@ class GlobKurierCustoms extends GlobKurier{
 
 		if( $key === 'hsCode' ){
 			return preg_replace( '/[^0-9.]/', '', (string) $value );
+		}
+
+		// Opis dwujezyczny "pl ;; en" - sanitize_text_field przycialby spacje separatora przy pustej czesci.
+		$separator = ' ;; ';
+		if( strpos( (string) $value, trim( $separator ) ) !== FALSE ){
+			$parts = array_map( 'sanitize_text_field', explode( trim( $separator ), (string) $value ) );
+
+			return implode( $separator, $parts );
 		}
 
 		return sanitize_text_field( (string) $value );

@@ -2,6 +2,8 @@
 
 namespace udigroup_globkurier;
 
+if (!defined('ABSPATH')) exit; // Exit if accessed directly
+
 require_once UDIGroup_Helper::getAdminPath( 'globkurier/GlobKurierCountries.php' );
 require_once UDIGroup_Helper::getAdminPath( 'globkurier/GlobKurierEncrypter.php' );
 require_once UDIGroup_Helper::getAdminPath( 'globkurier/GlobKurierUser.php' );
@@ -48,11 +50,6 @@ class GlobKurier{
     }
 
     public function isUserLoggedIn( $die = FALSE ){
-        if( ( $code = $this->getConnectionCode() ) !== 200 ){
-            $this->addErrorAdminNotice( "Błąd połączenia z serwerem GLOBKURIER<br>(Kod odpowiedzi = {$code})", 'error', $die );
-            return FALSE;
-        }
-
         $username = $this->settings( 'username' );
         $password = $this->settings( 'password' );
 
@@ -61,7 +58,17 @@ class GlobKurier{
             return FALSE;
         }
 
-        if( ( $code = $this->api()->testToken() ) !== 200  ){
+        // Wazny token z cache (ok. 20 h) = zalogowany, bez zapytan do API. Wczesniej kazde wywolanie robilo GET countries
+        // i POST auth/login. Zmiana loginu lub hasla czysci token (WoocommerceAddons::forgetApiSessionOnCredentialsChange),
+        // wiec nowe dane sa sprawdzane logowaniem przy pierwszym wyswietleniu strony.
+        $code = $this->api()->ensureToken();
+
+        if( $code === 0 || $code >= 500 ){
+            $this->addErrorAdminNotice( "Błąd połączenia z serwerem GLOBKURIER<br>(Kod odpowiedzi = {$code})", 'error', $die );
+            return FALSE;
+        }
+
+        if( $code !== 200 ){
             $this->addErrorAdminNotice( __( 'Błędny login lub hasło połączenia API GlobKurier', 'globkurier' ) . "<br>(Kod odpowiedzi = {$code})", 'error', $die );
             return FALSE;
         }

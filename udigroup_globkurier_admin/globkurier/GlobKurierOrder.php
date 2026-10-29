@@ -135,6 +135,22 @@ class GlobKurierOrder extends GlobKurier{
 
 		do_action( 'globkurier_after_order_params_parse', $params, $parsedParams );
 
+		// GlobKurier nie przyjmuje towarow niebezpiecznych - odrzucamy przed zapytaniem do API (formularz blokuje to
+		// juz w JS); blad w formacie odpowiedzi API, zeby metabox i wysylka zbiorcza pokazaly go jak dotad.
+		if( ! empty( $parsedParams[ 'containsDangerousGoods' ] ) ){
+			$order = [
+				'fields' => [ 'containsDangerousGoods' => __( 'GlobKurier nie przyjmuje towarów niebezpiecznych - usuń je z przesyłki i odznacz to pole.', 'globkurier' ) ],
+				'status' => 'error',
+			];
+
+			if( $returnOnError ){
+				return [ 'errors' => $order ];
+			}
+
+			echo wp_json_encode( $order );
+			die;
+		}
+
 		$function = 'order';
 		$method   = 'POST';
 		
@@ -245,7 +261,8 @@ class GlobKurierOrder extends GlobKurier{
 			if( $inpostDeliveryToPoint ){
 				$receiverAddress[ 'pointId' ] = $params[ 'inpostReceiverPointId' ] ?? '';
 			}
-		} else if( $params[ 'collectionType' ] == 'POINT' && $isRuch == 1 ){
+		} else if( $isRuch == 1 ){
+			// Punkt ORLEN odbiorcy niezaleznie od sposobu nadania - przy odbiorze kurierem (PICKUP) API tez go wymaga.
 			$receiverAddress[ 'pointId' ] = $params[ 'ruchReceiverPointId' ] ?? '';
 		}
 		
@@ -411,6 +428,8 @@ class GlobKurierOrder extends GlobKurier{
 			'addons'          => $extras,
 			'purpose'         => htmlentities( $params[ 'purpose' ] ?? '' ),
 			'declaredValue'   => htmlentities( $params[ 'declaredValue' ] ?? '' ),
+			// Oświadczenie o towarach niebezpiecznych - zawsze bool; czy wymagane, waliduje API.
+			'containsDangerousGoods' => filter_var( $params[ 'containsDangerousGoods' ] ?? false, FILTER_VALIDATE_BOOLEAN ),
 			'originId'        => apply_filters( 'globkurier_wc_order_origin_id', 'WOOCOMMERCE_API' ),
 		], $this);
 		
@@ -429,11 +448,19 @@ class GlobKurierOrder extends GlobKurier{
 	
 	private function saveOrderToWc( $order, $wcOrderId, $parsedParams, $extras ){
 		do_action( 'globkurier_before_save_order_to_wc', $order, $wcOrderId, $parsedParams );
-		
-		if( ! $wcOrderId ){
+
+		$wcOrder = $wcOrderId ? wc_get_order( (int)$wcOrderId ) : false;
+
+		if( $wcOrderId && ! $wcOrder ){
+			// Przesylka jest juz utworzona i oplacona - nie gubimy jej, zapisujemy na ghost poscie.
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- celowy log bledu operacyjnego (przesylka juz oplacona / migracja), nie debug.
+			error_log( '[globkurier] Nie znaleziono zamowienia WC #' . (int)$wcOrderId . ' przy zapisie przesylki ' . ( $order[ 'number' ] ?? '' ) . ' - zapis na ghost poscie.' );
+		}
+
+		if( ! $wcOrder ){
 			$wcOrderId = $this->getGhostPostID();
 		}
-		
+
 		$mataName = apply_filters( 'globkurier_wc_order_meta_name', 'globkurier_orders' );
 		
 		$orderDetails = [];
@@ -461,11 +488,56 @@ class GlobKurierOrder extends GlobKurier{
 		
 		$metaValue = maybe_serialize( apply_filters( 'globkurier_order_meta_value', $orderDetails ) );
 		
-		add_post_meta( (int)$wcOrderId, $mataName, $metaValue, FALSE );
-		
+		$saved = false;
+
+		if( $wcOrder ){
+			// Przez API zamowien WC: przy HPOS trafia do wc_orders_meta, bez HPOS do wp_postmeta (jak dotad).
+			try{
+				$wcOrder->add_meta_data( $mataName, $metaValue, false );
+				$wcOrder->save();
+				$saved = true;
+			} catch( \Throwable $e ){
+				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- celowy log bledu operacyjnego (przesylka juz oplacona / migracja), nie debug.
+				error_log( '[globkurier] Zapis przesylki ' . ( $order[ 'number' ] ?? '' ) . ' w zamowieniu #' . (int)$wcOrderId . ' nieudany: ' . $e->getMessage() );
+			}
+		}
+
+		if( ! $saved ){
+			// Przesylki bez zamowienia (ghost post) i awaryjnie, gdy zapis zamowienia sie nie powiodl.
+			add_post_meta( (int)$wcOrderId, $mataName, $metaValue, FALSE );
+		}
+
+		// Indeks listy historii (wlasna tabela); bledy indeksu sa logowane, nie przerywaja nadania.
+		UDIGroup_ShipmentHistory::indexShipment( (int)$wcOrderId, $metaValue );
+
 		do_action( 'globkurier_after_save_order_to_wc', $metaValue, $order, $wcOrderId, $parsedParams );
 	}
 	
+	/** Czas zycia statusu przesylki w cache (automatyczne pobieranie w metaboxie zamowienia). */
+	const STATUS_CACHE_TTL = 15 * 60;
+
+	/**
+	 * Status przesylki; $useCache - moze byc z cache (15 min). Kazde udane pobranie odswieza cache,
+	 * wiec reczne "Aktualizuj" (bez cache) poprawia tez to, co zobacza inni przy otwarciu zamowienia.
+	 */
+	public function getCurrentStatusCached( $params, bool $useCache ){
+
+		$cacheKey = 'globkurier_status_' . md5( (string) ( $params[ 'orderNumber' ] ?? '' ) );
+
+		if( $useCache ){
+			$cached = get_transient( $cacheKey );
+			if( is_array( $cached ) ){
+				return $cached;
+			}
+		}
+
+		// Przy bledzie API getCurrentStatus() konczy zadanie (die) - do cache trafiaja tylko udane odpowiedzi.
+		$status = $this->getCurrentStatus( $params );
+		set_transient( $cacheKey, $status, self::STATUS_CACHE_TTL );
+
+		return $status;
+	}
+
 	public function getCurrentStatus( $params ){
 		
 		$params = apply_filters( 'globkurier_get_order_status_params', $params );
@@ -496,7 +568,7 @@ class GlobKurierOrder extends GlobKurier{
 	
 	public function getFirstPickupDay( $params ){
 		
-		$date = ! empty( $params[ 'date' ] ) ? $params[ 'date' ] : date( 'Y-m-d' );
+		$date = ! empty( $params[ 'date' ] ) ? $params[ 'date' ] : gmdate( 'Y-m-d' );
 		
 		$i = 0;
 		
@@ -504,7 +576,7 @@ class GlobKurierOrder extends GlobKurier{
 			$params[ 'date' ] = $date;
 			$times            = $this->pickupTimeRanges( $params );
 			if( empty( $times ) ){
-				$date = date( 'Y-m-d', strtotime( $date . ' + 1 days' ) );
+				$date = gmdate( 'Y-m-d', strtotime( $date . ' + 1 days' ) );
 			} else{
 				return [ 'date' => $date, 'status' => 'ok' ];
 			}

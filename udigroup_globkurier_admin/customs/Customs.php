@@ -2,6 +2,8 @@
 
 namespace udigroup_globkurier;
 
+if (!defined('ABSPATH')) exit; // Exit if accessed directly
+
 class Customs
 {
 	const NONCE_CONFIG    = 'globkurier_customs_config_nonce';
@@ -33,8 +35,10 @@ class Customs
 		}
 
 		// HPOS: woocommerce_page_wc-orders?action=edit
-		if ($screen->id === 'woocommerce_page_wc-orders'
-			&& isset($_GET['action']) && $_GET['action'] === 'edit') {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- parametr adresu ekranu panelu tylko do wyboru assetow, bez zmiany stanu.
+		$action = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
+
+		if ($screen->id === 'woocommerce_page_wc-orders' && $action === 'edit') {
 			return true;
 		}
 
@@ -98,13 +102,19 @@ class Customs
 			'resetConfirm'   => __('Zmiana przewoźnika wyczyści wypełnioną deklarację celną. Kontynuować?', 'globkurier'),
 			'requestError'   => __('Wystąpił błąd komunikacji. Spróbuj ponownie.', 'globkurier'),
 			'fixFields'      => __('Popraw zaznaczone pola deklaracji celnej.', 'globkurier'),
+			/* translators: %d: liczba znakow (podstawiane w JS) */
 			'valMinLength'   => __('Min. %d znaków', 'globkurier'),
+			/* translators: %d: liczba znakow (podstawiane w JS) */
 			'valMaxLength'   => __('Maks. %d znaków', 'globkurier'),
+			/* translators: %s: wartosc graniczna (podstawiane w JS) */
 			'valGreater'     => __('Wartość musi być większa niż %s', 'globkurier'),
+			/* translators: %s: wartosc graniczna (podstawiane w JS) */
 			'valGreaterEq'   => __('Wartość nie może być mniejsza niż %s', 'globkurier'),
+			/* translators: %s: wartosc graniczna (podstawiane w JS) */
 			'valLessEq'      => __('Wartość nie może być większa niż %s', 'globkurier'),
 			'valDate'        => __('Nieprawidłowa data (RRRR-MM-DD)', 'globkurier'),
 			'valNumber'      => __('Wartość musi być liczbą', 'globkurier'),
+			/* translators: %d: liczba miejsc po przecinku (podstawiane w JS) */
 			'valPrecision'   => __('Maks. %d miejsc po przecinku', 'globkurier'),
 			'weightExceeds'  => __('Waga całkowita w deklaracji celnej nie może być większa niż waga podana w zamówieniu.', 'globkurier'),
 			'hsHint'         => __('Wpisz opis towaru, aby wyszukać kod HS...', 'globkurier'),
@@ -133,6 +143,10 @@ class Customs
 					</p>
 				</div>
 			</div>
+			<div class="globkurier-customs-config-error" id="globkurier-customs-config-error" style="display:none;">
+				<p><?php echo esc_html__('Nie udało się sprawdzić, czy dla tej przesyłki wymagana jest deklaracja celna.', 'globkurier'); ?></p>
+				<button type="button" class="button" id="globkurier-customs-config-retry"><?php echo esc_html__('Spróbuj ponownie', 'globkurier'); ?></button>
+			</div>
 			<input type="hidden" id="globkurier-customs-data" value="">
 		</div>
 		<?php
@@ -151,7 +165,7 @@ class Customs
 	{
 		$this->verify(self::NONCE_CONFIG);
 
-		$data            = $_POST['data'] ?? [];
+		$data            = $this->requestData();
 		$senderCountry   = sanitize_text_field($data['senderCountry'] ?? '');
 		$receiverCountry = sanitize_text_field($data['receiverCountry'] ?? '');
 		$carrierName     = sanitize_text_field($data['carrierName'] ?? '');
@@ -166,7 +180,7 @@ class Customs
 	{
 		$this->verify(self::NONCE_HSCODE);
 
-		$data              = $_POST['data'] ?? [];
+		$data              = $this->requestData();
 		$receiverCountryId = sanitize_text_field($data['receiverCountryId'] ?? '');
 		$itemDescription   = sanitize_text_field($data['itemDescription'] ?? '');
 
@@ -180,10 +194,15 @@ class Customs
 	{
 		$this->verify(self::NONCE_IMPORT);
 
-		$orderId = (int) ($_POST['data']['orderId'] ?? 0);
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce i uprawnienia sprawdza $this->verify() linie wyzej.
+		$orderId = absint($_POST['data']['orderId'] ?? 0);
 
 		if (! $orderId) {
 			wp_send_json_error(['message' => __('Brak identyfikatora zamówienia.', 'globkurier')]);
+		}
+
+		if (! UDIGroup_Helper::canProcessOrder($orderId)) {
+			wp_send_json_error(['message' => 'Forbidden']);
 		}
 
 		global $globKurier;
@@ -196,7 +215,7 @@ class Customs
 	{
 		$this->verify(self::NONCE_TRANSLATE);
 
-		$data   = $_POST['data'] ?? [];
+		$data   = $this->requestData();
 		$text   = sanitize_text_field($data['text'] ?? '');
 		$source = sanitize_text_field($data['sourceLanguage'] ?? 'pl');
 		$target = sanitize_text_field($data['targetLanguage'] ?? 'en');
@@ -217,9 +236,20 @@ class Customs
 		wp_send_json_success(['text' => $translated]);
 	}
 
+	/**
+	 * $_POST['data'] bez ukosnikow WP (inaczej "Men's" trafia do API jako "Men\'s"), po sanitize_text_field; zawsze tablica.
+	 */
+	private function requestData(): array
+	{
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce i uprawnienia sprawdza $this->verify() na poczatku kazdego handlera.
+		$data = map_deep(wp_unslash($_POST['data'] ?? []), 'sanitize_text_field');
+
+		return is_array($data) ? $data : [];
+	}
+
 	private function verify(string $nonceAction): void
 	{
-		$nonce = sanitize_text_field($_POST['data']['nonce'] ?? $_POST['nonce'] ?? '');
+		$nonce = sanitize_text_field(wp_unslash($_POST['data']['nonce'] ?? $_POST['nonce'] ?? ''));
 
 		if (! wp_verify_nonce($nonce, $nonceAction)) {
 			wp_send_json_error(['message' => 'Invalid nonce']);
